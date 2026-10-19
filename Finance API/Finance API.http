@@ -164,3 +164,18 @@ Accept: application/json
 GET {{Finance_API_HostAddress_Https}}/api/accounts/{{accountId}}/forecast
 Authorization: Bearer {{token}}
 Accept: application/json
+
+### Home summary
+GET {{Finance_API_HostAddress_Https}}/api/home
+Authorization: Bearer {{token}}
+Accept: application/json
+
+### Setup status
+GET {{Finance_API_HostAddress_Https}}/api/setup
+Authorization: Bearer {{token}}
+Accept: application/json
+
+### Home summary and transfer recommendations
+GET {{Finance_API_HostAddress_Https}}/api/home
+Authorization: Bearer {{token}}
+Accept: application/json

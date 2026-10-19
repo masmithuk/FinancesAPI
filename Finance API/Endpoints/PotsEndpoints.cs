@@ -85,17 +85,14 @@ public static class PotsEndpoints
     /// </summary>
     public sealed record RunningBalanceResponse(DateTime Date, decimal CumulativeAmount);
 
-    private static string GetUserId(ClaimsPrincipal user)
-        => user.FindFirst(ClaimTypes.NameIdentifier)?.Value
-           ?? user.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value
-           ?? string.Empty;
+    // User id extraction handled by IUserContextService
 
     /// <summary>
     /// Creates a new pot for the specified account. Caller must own the account.
     /// </summary>
-    private static async Task<IResult> CreatePotAsync(Guid accountId, CreatePotRequest request, FinanceDbContext db, ClaimsPrincipal user)
+    private static async Task<IResult> CreatePotAsync(Guid accountId, CreatePotRequest request, FinanceDbContext db, ClaimsPrincipal user, Finance_API.Services.IUserContextService userContext)
     {
-        var ownerId = GetUserId(user);
+        var ownerId = userContext.GetUserId(user);
         if (string.IsNullOrEmpty(ownerId)) return Results.Unauthorized();
 
         var account = await db.Accounts.FindAsync(accountId);
@@ -111,9 +108,9 @@ public static class PotsEndpoints
     /// <summary>
     /// Lists pots for the specified account. Caller must own the account.
     /// </summary>
-    private static async Task<IResult> ListPotsAsync(Guid accountId, FinanceDbContext db, ClaimsPrincipal user)
+    private static async Task<IResult> ListPotsAsync(Guid accountId, FinanceDbContext db, ClaimsPrincipal user, Finance_API.Services.IUserContextService userContext)
     {
-        var ownerId = GetUserId(user);
+        var ownerId = userContext.GetUserId(user);
         var account = await db.Accounts.FindAsync(accountId);
         if (account is null || account.OwnerId != ownerId) return Results.NotFound();
 
@@ -128,9 +125,9 @@ public static class PotsEndpoints
     /// <summary>
     /// Returns a single pot by id for the specified account. Caller must own the account.
     /// </summary>
-    private static async Task<IResult> GetPotAsync(Guid accountId, Guid id, FinanceDbContext db, ClaimsPrincipal user)
+    private static async Task<IResult> GetPotAsync(Guid accountId, Guid id, FinanceDbContext db, ClaimsPrincipal user, Finance_API.Services.IUserContextService userContext)
     {
-        var ownerId = GetUserId(user);
+        var ownerId = userContext.GetUserId(user);
         var account = await db.Accounts.FindAsync(accountId);
         if (account is null || account.OwnerId != ownerId) return Results.NotFound();
 
@@ -143,9 +140,9 @@ public static class PotsEndpoints
     /// <summary>
     /// Creates a goal attached to the specified pot. Caller must own the parent account.
     /// </summary>
-    private static async Task<IResult> CreateGoalAsync(Guid potId, CreateGoalRequest request, FinanceDbContext db, ClaimsPrincipal user)
+    private static async Task<IResult> CreateGoalAsync(Guid potId, CreateGoalRequest request, FinanceDbContext db, ClaimsPrincipal user, Finance_API.Services.IUserContextService userContext)
     {
-        var ownerId = GetUserId(user);
+        var ownerId = userContext.GetUserId(user);
 
         var pot = await db.Pots.Include(p => p.Account).FirstOrDefaultAsync(p => p.Id == potId);
         if (pot is null || pot.Account is null || pot.Account.OwnerId != ownerId) return Results.NotFound();
@@ -160,9 +157,9 @@ public static class PotsEndpoints
     /// <summary>
     /// Lists goals for a pot. Caller must own the parent account.
     /// </summary>
-    private static async Task<IResult> ListGoalsAsync(Guid potId, FinanceDbContext db, ClaimsPrincipal user)
+    private static async Task<IResult> ListGoalsAsync(Guid potId, FinanceDbContext db, ClaimsPrincipal user, Finance_API.Services.IUserContextService userContext)
     {
-        var ownerId = GetUserId(user);
+        var ownerId = userContext.GetUserId(user);
         var pot = await db.Pots.Include(p => p.Account).FirstOrDefaultAsync(p => p.Id == potId);
         if (pot is null || pot.Account is null || pot.Account.OwnerId != ownerId) return Results.NotFound();
 
@@ -179,9 +176,9 @@ public static class PotsEndpoints
     /// Uses account-level balances; pot-specific balances are not included.
     /// Caller must own the account.
     /// </summary>
-    private static async Task<IResult> GetRunningBalancesAsync(Guid accountId, FinanceDbContext db, ClaimsPrincipal user)
+    private static async Task<IResult> GetRunningBalancesAsync(Guid accountId, FinanceDbContext db, ClaimsPrincipal user, Finance_API.Services.IUserContextService userContext)
     {
-        var ownerId = GetUserId(user);
+        var ownerId = userContext.GetUserId(user);
         var account = await db.Accounts.FindAsync(accountId);
         if (account is null || account.OwnerId != ownerId) return Results.NotFound();
 

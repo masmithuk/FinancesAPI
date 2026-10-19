@@ -34,14 +34,11 @@ public static class SchedulesEndpoints
     public sealed record CreateScheduleRequest(string Name, decimal Amount, DateTime StartDate, int Frequency, bool IsIncome);
     public sealed record ScheduleResponse(Guid Id, string Name, decimal Amount, DateTime StartDate, int Frequency, bool IsIncome);
 
-    private static string GetUserId(ClaimsPrincipal user)
-        => user.FindFirst(ClaimTypes.NameIdentifier)?.Value
-           ?? user.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value
-           ?? string.Empty;
+    // User id extraction handled by IUserContextService
 
-    private static async Task<IResult> CreateScheduleAsync(Guid accountId, CreateScheduleRequest request, FinanceDbContext db, ClaimsPrincipal user)
+    private static async Task<IResult> CreateScheduleAsync(Guid accountId, CreateScheduleRequest request, FinanceDbContext db, ClaimsPrincipal user, Finance_API.Services.IUserContextService userContext)
     {
-        var ownerId = GetUserId(user);
+        var ownerId = userContext.GetUserId(user);
         if (string.IsNullOrEmpty(ownerId)) return Results.Unauthorized();
 
         var account = await db.Accounts.FindAsync(accountId);
@@ -63,9 +60,9 @@ public static class SchedulesEndpoints
         return Results.Created($"/api/accounts/{accountId}/schedules/{schedule.Id}", new ScheduleResponse(schedule.Id, schedule.Name, schedule.Amount, schedule.StartDate, schedule.Frequency, schedule.IsIncome));
     }
 
-    private static async Task<IResult> ListSchedulesAsync(Guid accountId, FinanceDbContext db, ClaimsPrincipal user)
+    private static async Task<IResult> ListSchedulesAsync(Guid accountId, FinanceDbContext db, ClaimsPrincipal user, Finance_API.Services.IUserContextService userContext)
     {
-        var ownerId = GetUserId(user);
+        var ownerId = userContext.GetUserId(user);
         if (string.IsNullOrEmpty(ownerId)) return Results.Unauthorized();
 
         var account = await db.Accounts.FindAsync(accountId);

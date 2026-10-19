@@ -19,14 +19,11 @@ public static class ForecastEndpoints
         return endpoints;
     }
 
-    private static string GetUserId(System.Security.Claims.ClaimsPrincipal user)
-        => user.FindFirst(ClaimTypes.NameIdentifier)?.Value
-           ?? user.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value
-           ?? string.Empty;
+    // User id extraction handled by IUserContextService
 
-    private static async Task<IResult> GetForecastAsync(Guid accountId, ForecastService svc, ClaimsPrincipal user, FinanceDbContext db)
+    private static async Task<IResult> GetForecastAsync(Guid accountId, ForecastService svc, ClaimsPrincipal user, FinanceDbContext db, Finance_API.Services.IUserContextService userContext)
     {
-        var ownerId = GetUserId(user);
+        var ownerId = userContext.GetUserId(user);
         if (string.IsNullOrEmpty(ownerId)) return Results.Unauthorized();
 
         var account = await db.Accounts.FindAsync(accountId);

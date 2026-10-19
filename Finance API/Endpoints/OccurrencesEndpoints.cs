@@ -38,14 +38,11 @@ public static class OccurrencesEndpoints
     public sealed record CreateOccurrenceRequest(DateTime Date, decimal Amount, bool IsIncome, Guid? ScheduledItemId, string? ExternalReference);
     public sealed record OccurrenceResponse(Guid Id, DateTime Date, decimal Amount, bool IsIncome, bool IsReconciled, string? ExternalReference);
 
-    private static string GetUserId(ClaimsPrincipal user)
-        => user.FindFirst(ClaimTypes.NameIdentifier)?.Value
-           ?? user.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value
-           ?? string.Empty;
+    // User id extraction handled by IUserContextService
 
-    private static async Task<IResult> CreateOccurrenceAsync(Guid accountId, CreateOccurrenceRequest request, FinanceDbContext db, ClaimsPrincipal user)
+    private static async Task<IResult> CreateOccurrenceAsync(Guid accountId, CreateOccurrenceRequest request, FinanceDbContext db, ClaimsPrincipal user, Finance_API.Services.IUserContextService userContext)
     {
-        var ownerId = GetUserId(user);
+        var ownerId = userContext.GetUserId(user);
         if (string.IsNullOrEmpty(ownerId)) return Results.Unauthorized();
 
         var account = await db.Accounts.FindAsync(accountId);
@@ -75,9 +72,9 @@ public static class OccurrencesEndpoints
         return Results.Created($"/api/accounts/{accountId}/occurrences/{occ.Id}", new OccurrenceResponse(occ.Id, occ.Date, occ.Amount, occ.IsIncome, occ.IsReconciled, occ.ExternalReference));
     }
 
-    private static async Task<IResult> ListOccurrencesAsync(Guid accountId, FinanceDbContext db, ClaimsPrincipal user)
+    private static async Task<IResult> ListOccurrencesAsync(Guid accountId, FinanceDbContext db, ClaimsPrincipal user, Finance_API.Services.IUserContextService userContext)
     {
-        var ownerId = GetUserId(user);
+        var ownerId = userContext.GetUserId(user);
         if (string.IsNullOrEmpty(ownerId)) return Results.Unauthorized();
 
         var account = await db.Accounts.FindAsync(accountId);
@@ -92,9 +89,9 @@ public static class OccurrencesEndpoints
         return Results.Ok(list);
     }
 
-    private static async Task<IResult> ReconcileOccurrenceAsync(Guid accountId, Guid id, FinanceDbContext db, ClaimsPrincipal user)
+    private static async Task<IResult> ReconcileOccurrenceAsync(Guid accountId, Guid id, FinanceDbContext db, ClaimsPrincipal user, Finance_API.Services.IUserContextService userContext)
     {
-        var ownerId = GetUserId(user);
+        var ownerId = userContext.GetUserId(user);
         if (string.IsNullOrEmpty(ownerId)) return Results.Unauthorized();
 
         var account = await db.Accounts.FindAsync(accountId);

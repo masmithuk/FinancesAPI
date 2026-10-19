@@ -74,17 +74,14 @@ public static class AccountsEndpoints
     /// Extracts the current user's id from the ClaimsPrincipal. We prefer
     /// ClaimTypes.NameIdentifier but fall back to the JWT "sub" claim.
     /// </summary>
-    private static string GetUserId(ClaimsPrincipal user)
-        => user.FindFirst(ClaimTypes.NameIdentifier)?.Value
-           ?? user.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value
-           ?? string.Empty;
+    // User id extraction handled by IUserContextService
 
     /// <summary>
     /// Creates a new account for the authenticated user.
     /// </summary>
-    private static async Task<IResult> CreateAccountAsync(CreateAccountRequest request, FinanceDbContext db, ClaimsPrincipal user)
+    private static async Task<IResult> CreateAccountAsync(CreateAccountRequest request, FinanceDbContext db, ClaimsPrincipal user, Finance_API.Services.IUserContextService userContext)
     {
-        var ownerId = GetUserId(user);
+        var ownerId = userContext.GetUserId(user);
         if (string.IsNullOrEmpty(ownerId)) return Results.Unauthorized();
 
         var account = new Account { Name = request.Name, OwnerId = ownerId };
@@ -97,9 +94,9 @@ public static class AccountsEndpoints
     /// <summary>
     /// Lists accounts that belong to the authenticated user.
     /// </summary>
-    private static async Task<IResult> ListAccountsAsync(FinanceDbContext db, ClaimsPrincipal user)
+    private static async Task<IResult> ListAccountsAsync(FinanceDbContext db, ClaimsPrincipal user, Finance_API.Services.IUserContextService userContext)
     {
-        var ownerId = GetUserId(user);
+        var ownerId = userContext.GetUserId(user);
         var accounts = await db.Accounts
             .Where(a => a.OwnerId == ownerId)
             .Select(a => new AccountResponse(a.Id, a.Name))
@@ -111,9 +108,9 @@ public static class AccountsEndpoints
     /// <summary>
     /// Retrieves a single account by id if it belongs to the caller.
     /// </summary>
-    private static async Task<IResult> GetAccountAsync(Guid id, FinanceDbContext db, ClaimsPrincipal user)
+    private static async Task<IResult> GetAccountAsync(Guid id, FinanceDbContext db, ClaimsPrincipal user, Finance_API.Services.IUserContextService userContext)
     {
-        var ownerId = GetUserId(user);
+        var ownerId = userContext.GetUserId(user);
         var account = await db.Accounts.FindAsync(id);
         if (account is null || account.OwnerId != ownerId) return Results.NotFound();
 
@@ -124,9 +121,9 @@ public static class AccountsEndpoints
     /// Adds a dated balance entry to the specified account. Caller must own
     /// the account. The date component of the request is used (time ignored).
     /// </summary>
-    private static async Task<IResult> AddBalanceAsync(Guid id, AddBalanceRequest request, FinanceDbContext db, ClaimsPrincipal user)
+    private static async Task<IResult> AddBalanceAsync(Guid id, AddBalanceRequest request, FinanceDbContext db, ClaimsPrincipal user, Finance_API.Services.IUserContextService userContext)
     {
-        var ownerId = GetUserId(user);
+        var ownerId = userContext.GetUserId(user);
         var account = await db.Accounts.FindAsync(id);
         if (account is null || account.OwnerId != ownerId) return Results.NotFound();
 
@@ -140,9 +137,9 @@ public static class AccountsEndpoints
     /// <summary>
     /// Lists balances for the account, ordered by date (newest first).
     /// </summary>
-    private static async Task<IResult> ListBalancesAsync(Guid id, FinanceDbContext db, ClaimsPrincipal user)
+    private static async Task<IResult> ListBalancesAsync(Guid id, FinanceDbContext db, ClaimsPrincipal user, Finance_API.Services.IUserContextService userContext)
     {
-        var ownerId = GetUserId(user);
+        var ownerId = userContext.GetUserId(user);
         var account = await db.Accounts.FindAsync(id);
         if (account is null || account.OwnerId != ownerId) return Results.NotFound();
 
