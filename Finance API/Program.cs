@@ -148,6 +148,8 @@ app.MapMeEndpoints();
 app.MapAccountsEndpoints();
 // Map pots/goals endpoints
 app.MapPotsEndpoints();
+// Map schedules (recurring income/expenses)
+app.MapSchedulesEndpoints();
 
 // Start the web server and listen for incoming HTTP requests
 app.Run();

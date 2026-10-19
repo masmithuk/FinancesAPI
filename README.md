@@ -36,6 +36,8 @@ Recommended transfers are informational only. Users make transfers outside the a
 
 The active development project is an ASP.NET Core Minimal API targeting .NET 10. Its foundation includes EF Core with SQLite, startup-applied migrations, minimal API request validation, RFC 7807 Problem Details, a readiness endpoint, and development-only OpenAPI. Finance domain endpoints and authentication are still to be implemented.
 
+Implemented in this update: basic scheduling endpoints and persistence for recurring income/expenses (issue #5). These provide create/list operations for per-account schedules; occurrence generation and reconciliation are tracked in subsequent issues.
+
 The repository also retains the earlier API implementation in `FinancesAPI/`. The current solution and development project are `Finance API.slnx` and `Finance API/Finance API.csproj`.
 
 ### Run the API

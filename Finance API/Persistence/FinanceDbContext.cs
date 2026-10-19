@@ -17,22 +17,15 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options)
     public DbSet<Account> Accounts { get; set; } = null!;
     public DbSet<Balance> Balances { get; set; } = null!;
     public DbSet<Pot> Pots { get; set; } = null!;
+    public DbSet<ScheduledItem> ScheduledItems { get; set; } = null!;
     public DbSet<Goal> Goals { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
-
-        // Configure one-to-many relationship: Account has many Balances
+        // Configure one-to-many relationships with explicit navigation properties
         builder.Entity<Account>()
             .HasMany(a => a.Balances)
-            .WithOne(b => b.Account)
-            .HasForeignKey(b => b.AccountId)
-            .OnDelete(DeleteBehavior.Cascade);
-
-        // Account has many Pots
-        builder.Entity<Account>()
-            .HasMany(a => a.Balances) // keep existing
             .WithOne(b => b.Account)
             .HasForeignKey(b => b.AccountId)
             .OnDelete(DeleteBehavior.Cascade);
@@ -41,6 +34,12 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options)
             .HasMany(a => a.Pots)
             .WithOne(p => p.Account)
             .HasForeignKey(p => p.AccountId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<Account>()
+            .HasMany(a => a.ScheduledItems)
+            .WithOne(s => s.Account)
+            .HasForeignKey(s => s.AccountId)
             .OnDelete(DeleteBehavior.Cascade);
 
         // Pot has many Goals

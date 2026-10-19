@@ -114,3 +114,22 @@ Accept: application/json
 GET {{Finance_API_HostAddress_Https}}/api/accounts/{{accountId}}/running-balances
 Authorization: Bearer {{token}}
 Accept: application/json
+
+### Schedules (recurring income/expenses)
+### Create a schedule on an account
+POST {{Finance_API_HostAddress_Https}}/api/accounts/{{accountId}}/schedules
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "Salary",
+  "amount": 2000.00,
+  "startDate": "2026-10-01",
+  "frequency": 2,
+  "isIncome": true
+}
+
+### List schedules for an account
+GET {{Finance_API_HostAddress_Https}}/api/accounts/{{accountId}}/schedules
+Authorization: Bearer {{token}}
+Accept: application/json

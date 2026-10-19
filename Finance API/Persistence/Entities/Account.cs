@@ -22,4 +22,5 @@ public sealed class Account
 
     public ICollection<Balance> Balances { get; set; } = new List<Balance>();
     public ICollection<Pot> Pots { get; set; } = new List<Pot>();
+    public ICollection<ScheduledItem> ScheduledItems { get; set; } = new List<ScheduledItem>();
 }

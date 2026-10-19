@@ -164,6 +164,38 @@ namespace Finance_API.Persistence.Migrations
                     b.ToTable("Pots");
                 });
 
+            modelBuilder.Entity("Finance_API.Persistence.Entities.ScheduledItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("AccountId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal>("Amount")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Frequency")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("IsIncome")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("StartDate")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AccountId");
+
+                    b.ToTable("ScheduledItems");
+                });
+
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRole", b =>
                 {
                     b.Property<string>("Id")
@@ -325,6 +357,17 @@ namespace Finance_API.Persistence.Migrations
                     b.Navigation("Account");
                 });
 
+            modelBuilder.Entity("Finance_API.Persistence.Entities.ScheduledItem", b =>
+                {
+                    b.HasOne("Finance_API.Persistence.Entities.Account", "Account")
+                        .WithMany("ScheduledItems")
+                        .HasForeignKey("AccountId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Account");
+                });
+
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>", b =>
                 {
                     b.HasOne("Microsoft.AspNetCore.Identity.IdentityRole", null)
@@ -381,6 +424,8 @@ namespace Finance_API.Persistence.Migrations
                     b.Navigation("Balances");
 
                     b.Navigation("Pots");
+
+                    b.Navigation("ScheduledItems");
                 });
 
             modelBuilder.Entity("Finance_API.Persistence.Entities.Pot", b =>
