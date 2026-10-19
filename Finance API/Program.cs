@@ -160,8 +160,8 @@ app.MapSchedulesEndpoints();
 app.MapOccurrencesEndpoints();
 // Map forecast endpoint
 app.MapForecastEndpoints();
-// Map home and setup endpoints
-app.MapHomeEndpoints();
+// Map Financial Overview and setup endpoints
+app.MapFinancialOverviewEndpoints();
 
 // Start the web server and listen for incoming HTTP requests
 app.Run();

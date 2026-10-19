@@ -1,6 +1,6 @@
 @Finance_API_HostAddress = http://localhost:5106
 @Finance_API_HostAddress_Https = https://localhost:7056
-@token = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIyYjBmYTVlYy05MzliLTRhZWEtODlmOC0yNWExZjAwYmFiMmQiLCJ1bmlxdWVfbmFtZSI6ImFsaWNlIiwiaHR0cDovL3NjaGVtYXMueG1sc29hcC5vcmcvd3MvMjAwNS8wNS9pZGVudGl0eS9jbGFpbXMvbmFtZWlkZW50aWZpZXIiOiIyYjBmYTVlYy05MzliLTRhZWEtODlmOC0yNWExZjAwYmFiMmQiLCJleHAiOjE3OTI0MTU3NTMsImlzcyI6IkZpbmFuY2VBcGlEZXYiLCJhdWQiOiJGaW5hbmNlQXBpQ2xpZW50cyJ9._6SGRTL6JYIM1kamSDqmMe43CJAmOpI7mvc8euTQGBA
+@token = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIyYjBmYTVlYy05MzliLTRhZWEtODlmOC0yNWExZjAwYmFiMmQiLCJ1bmlxdWVfbmFtZSI6ImFsaWNlIiwiaHR0cDovL3NjaGVtYXMueG1sc29hcC5vcmcvd3MvMjAwNS8wNS9pZGVudGl0eS9jbGFpbXMvbmFtZWlkZW50aWZpZXIiOiIyYjBmYTVlYy05MzliLTRhZWEtODlmOC0yNWExZjAwYmFiMmQiLCJleHAiOjE3OTI0NDA5MDcsImlzcyI6IkZpbmFuY2VBcGlEZXYiLCJhdWQiOiJGaW5hbmNlQXBpQ2xpZW50cyJ9.MvngHJwjNgTXi691Wt0BaMuXhTf0zc-9tp0P2n1TI0Q
 @accountId = 24fa30b2-9a67-4a70-9b34-a1e4d915a81d
 @potId = 49b7c59e-8bf4-4498-9107-7b4626f219a8
 @occurrenceId = a590d356-b6f9-461a-b0b4-6b4db260ef40
@@ -165,17 +165,12 @@ GET {{Finance_API_HostAddress_Https}}/api/accounts/{{accountId}}/forecast
 Authorization: Bearer {{token}}
 Accept: application/json
 
-### Home summary
-GET {{Finance_API_HostAddress_Https}}/api/home
+### Financial Overview summary
+GET {{Finance_API_HostAddress_Https}}/api/financialoverview
 Authorization: Bearer {{token}}
 Accept: application/json
 
 ### Setup status
 GET {{Finance_API_HostAddress_Https}}/api/setup
-Authorization: Bearer {{token}}
-Accept: application/json
-
-### Home summary and transfer recommendations
-GET {{Finance_API_HostAddress_Https}}/api/home
 Authorization: Bearer {{token}}
 Accept: application/json

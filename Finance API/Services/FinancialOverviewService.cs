@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Finance_API.Services;
 
 /// <summary>
-/// Builds the Home summary, setup status, and simple transfer recommendations.
+/// Builds the Financial Overview, setup status, and simple transfer recommendations.
 ///
 /// This V1 implementation is deliberately conservative: recommendations are
 /// informational only and use a simple greedy allocation from accounts with
@@ -24,13 +24,15 @@ public sealed class FinancialOverviewService
 
     public record SetupStatus(bool HasAccount, bool HasBalance, bool HasPotIfGoals, IEnumerable<string> Missing);
 
-    public record AccountSummary(Guid AccountId, string Name, decimal CurrentBalance);
+    // AvailableForSpending represents the account balance plus near-term scheduled and pending movements
+    public record AccountSummary(Guid AccountId, string Name, decimal AvailableForSpending);
 
     public record PotShortfall(Guid PotId, string PotName, decimal Shortfall);
 
-    public record TransferSuggestion(Guid FromAccountId, Guid ToPotId, decimal Amount, string Explanation);
+    // Include the target account id for recommendations so clients can display where the pot resides
+    public record TransferSuggestion(Guid FromAccountId, Guid ToAccountId, Guid ToPotId, decimal Amount, string Explanation);
 
-    public record HomeSummary(IEnumerable<AccountSummary> Accounts, IEnumerable<PotShortfall> PotShortfalls, decimal SafeToSpend, IEnumerable<TransferSuggestion> Recommendations);
+    public record FinancialOverviewSummary(IEnumerable<AccountSummary> Accounts, IEnumerable<PotShortfall> PotShortfalls, decimal SafeToSpend, IEnumerable<TransferSuggestion> Recommendations);
 
     public async Task<SetupStatus> GetSetupStatusAsync(string ownerId)
     {
@@ -55,27 +57,49 @@ public sealed class FinancialOverviewService
         return new SetupStatus(hasAccount, hasBalance, hasPotIfGoals, missing);
     }
 
-    public async Task<HomeSummary> GetHomeSummaryAsync(string ownerId)
+    public async Task<FinancialOverviewSummary> GetFinancialOverviewAsync(string ownerId)
     {
         var accounts = await _db.Accounts.Where(a => a.OwnerId == ownerId).ToListAsync();
         var accountSummaries = new List<AccountSummary>();
 
+        var today = DateTime.UtcNow.Date;
+        var futureWindowEnd = today.AddMonths(2); // include near-term scheduled items (V1 heuristic)
+
         foreach (var a in accounts)
         {
-            var current = await _db.Balances.Where(b => b.AccountId == a.Id && b.Date <= DateTime.UtcNow.Date).SumAsync(b => (decimal?)b.Amount) ?? 0m;
-            accountSummaries.Add(new AccountSummary(a.Id, a.Name, current));
+            // Starting balance up to today
+            var starting = await _db.Balances.Where(b => b.AccountId == a.Id && b.Date <= today).SumAsync(b => (decimal?)b.Amount) ?? 0m;
+
+            // Include scheduled items starting within the near-term window
+            var scheduled = await _db.ScheduledItems
+                .Where(s => s.AccountId == a.Id && s.StartDate.Date >= today && s.StartDate.Date <= futureWindowEnd)
+                .ToListAsync();
+
+            var scheduledSum = scheduled.Sum(s => s.IsIncome ? s.Amount : -s.Amount);
+
+            // Include pending (unreconciled) occurrences in the window
+            var pendingSum = await _db.Occurrences
+                .Where(o => o.AccountId == a.Id && !o.IsReconciled && o.Date.Date >= today && o.Date.Date <= futureWindowEnd)
+                .SumAsync(o => (decimal?)(o.IsIncome ? o.Amount : -o.Amount)) ?? 0m;
+
+            var available = starting + scheduledSum + pendingSum;
+            accountSummaries.Add(new AccountSummary(a.Id, a.Name, available));
         }
 
-        // Compute pot shortfalls: goal.TargetAmount - current pot balances (sum of balances linked to account? For simplicity estimate pot current as 0 in V1)
+        // Compute pot shortfalls: goal.TargetAmount - current pot balances (approximate by account available for now)
         var potShortfalls = new List<PotShortfall>();
         var pots = await _db.Pots.Include(p => p.Goals).Include(p => p.Account).Where(p => p.Account != null && p.Account.OwnerId == ownerId).ToListAsync();
+
+        // Build a mapping from pot id to its account id for enrichment of recommendations
+        var potToAccount = pots.ToDictionary(pp => pp.Id, pp => pp.AccountId);
+
         foreach (var p in pots)
         {
             var goal = await _db.Goals.Where(g => g.PotId == p.Id).FirstOrDefaultAsync();
             if (goal is not null)
             {
-                // Estimate pot current amount by summing balances on the account for now (pot-specific balances not modelled separately)
-                var accountBal = accountSummaries.FirstOrDefault(a => a.AccountId == p.AccountId)?.CurrentBalance ?? 0m;
+                // Estimate pot current amount by using the associated account's available funds
+                var accountBal = accountSummaries.FirstOrDefault(a => a.AccountId == p.AccountId)?.AvailableForSpending ?? 0m;
                 var shortfall = Math.Max(0, goal.TargetAmount - accountBal);
                 if (shortfall > 0) potShortfalls.Add(new PotShortfall(p.Id, p.Name, shortfall));
             }
@@ -90,9 +114,9 @@ public sealed class FinancialOverviewService
             safeToSpend = forecast.SafeToSpend;
         }
 
-        // Simple transfer recommendations: greedily cover pot shortfalls from accounts with positive current balances
+        // Simple transfer recommendations: greedily cover pot shortfalls from accounts with positive available balances
         var recs = new List<TransferSuggestion>();
-        var sources = accountSummaries.Where(a => a.CurrentBalance > 0).OrderByDescending(a => a.CurrentBalance).Select(a => new AccountSummary(a.AccountId, a.Name, a.CurrentBalance)).ToList();
+        var sources = accountSummaries.Where(a => a.AvailableForSpending > 0).OrderByDescending(a => a.AvailableForSpending).Select(a => new AccountSummary(a.AccountId, a.Name, a.AvailableForSpending)).ToList();
         foreach (var pot in potShortfalls)
         {
             var remaining = pot.Shortfall;
@@ -100,15 +124,27 @@ public sealed class FinancialOverviewService
             {
                 if (remaining <= 0) break;
                 var src = sources[i];
-                var take = Math.Min(src.CurrentBalance, remaining);
+                var take = Math.Min(src.AvailableForSpending, remaining);
                 if (take <= 0) continue;
-                recs.Add(new TransferSuggestion(src.AccountId, pot.PotId, take, $"Cover shortfall for pot '{pot.PotName}'"));
+                var toAccountId = potToAccount.TryGetValue(pot.PotId, out var ta) ? ta : Guid.Empty;
+                recs.Add(new TransferSuggestion(src.AccountId, toAccountId, pot.PotId, take, $"Cover shortfall for pot '{pot.PotName}'"));
                 // reduce the available amount
-                sources[i] = new AccountSummary(src.AccountId, src.Name, src.CurrentBalance - take);
+                sources[i] = new AccountSummary(src.AccountId, src.Name, src.AvailableForSpending - take);
                 remaining -= take;
             }
         }
 
-        return new HomeSummary(accountSummaries, potShortfalls, safeToSpend, recs);
+        // Apply allocations to account summaries so availableForSpending reflects post-transfer amounts
+        var allocations = recs.GroupBy(r => r.FromAccountId).ToDictionary(g => g.Key, g => g.Sum(x => x.Amount));
+        for (int i = 0; i < accountSummaries.Count; i++)
+        {
+            var a = accountSummaries[i];
+            if (allocations.TryGetValue(a.AccountId, out var alloc))
+            {
+                accountSummaries[i] = new AccountSummary(a.AccountId, a.Name, a.AvailableForSpending - alloc);
+            }
+        }
+
+        return new FinancialOverviewSummary(accountSummaries, potShortfalls, safeToSpend, recs);
     }
 }

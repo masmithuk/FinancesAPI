@@ -128,12 +128,12 @@ public sealed class ForecastService
         if (s.Frequency == 2) // monthly
         {
             var y = cur.Year; var m = cur.Month;
-            while (new DateTime(y, m, Math.Min(cur.Day, DateTime.DaysInMonth(y, m))) < date)
+            while (new DateTime(y, m, ClampDayOfMonth(cur.Day, y, m)) < date)
             {
                 m++;
                 if (m > 12) { m = 1; y++; }
             }
-            var day = Math.Min(cur.Day, DateTime.DaysInMonth(y, m));
+            var day = ClampDayOfMonth(cur.Day, y, m);
             return new DateTime(y, m, day);
         }
 
@@ -141,11 +141,16 @@ public sealed class ForecastService
         if (s.Frequency == 3)
         {
             var y = cur.Year;
-            while (new DateTime(y, cur.Month, cur.Day) < date) y++;
-            return new DateTime(y, cur.Month, Math.Min(cur.Day, DateTime.DaysInMonth(y, cur.Month)));
+            while (new DateTime(y, cur.Month, ClampDayOfMonth(cur.Day, y, cur.Month)) < date) y++;
+            return new DateTime(y, cur.Month, ClampDayOfMonth(cur.Day, y, cur.Month));
         }
 
         return cur;
+    }
+
+    private static int ClampDayOfMonth(int day, int year, int month)
+    {
+        return Math.Min(day, DateTime.DaysInMonth(year, month));
     }
 
     private static DateTime AdvanceByFrequency(DateTime date, int frequency)

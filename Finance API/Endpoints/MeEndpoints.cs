@@ -8,7 +8,7 @@ namespace Finance_API.Endpoints;
 /// authenticated user. Useful for testing that JWT tokens are accepted by
 /// the API and that authentication is correctly configured.
 /// </summary>
-public static class FinancialOverviewEndpoints
+public static class MeEndpoints
 {
     public static IEndpointRouteBuilder MapMeEndpoints(this IEndpointRouteBuilder endpoints)
     {
