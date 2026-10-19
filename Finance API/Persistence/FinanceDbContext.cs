@@ -1,4 +1,8 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
+
+// ApplicationUser is declared in the same namespace and used as the user type
+// for Identity's tables.
 
 namespace Finance_API.Persistence;
 
@@ -6,6 +10,6 @@ namespace Finance_API.Persistence;
 // properties here to represent tables (entities) in the database. The class is
 // registered with DI in Program.cs via AddDbContext<T>.
 public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options)
-    : DbContext(options)
+    : IdentityDbContext<ApplicationUser>(options)
 {
 }

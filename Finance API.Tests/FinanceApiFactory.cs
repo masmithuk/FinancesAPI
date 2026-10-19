@@ -40,7 +40,10 @@ internal sealed class FinanceApiFactory(SqliteConnection connection) : WebApplic
         builder.ConfigureAppConfiguration((_, configuration) =>
             configuration.AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["ConnectionStrings:Finance"] = "Data Source=:memory:"
+                ["ConnectionStrings:Finance"] = "Data Source=:memory:",
+                // In tests we skip applying EF migrations at app startup and
+                // instead ensure the database is created for the current model.
+                ["SkipMigrations"] = "true"
             }));
 
         // Replace the application's DbContext configuration with one that

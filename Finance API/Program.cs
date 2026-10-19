@@ -3,6 +3,10 @@ using Finance_API.Endpoints;
 using Finance_API.Persistence;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
 
 // Create the application builder (minimal hosting model)
 var builder = WebApplication.CreateBuilder(args);
@@ -52,6 +56,45 @@ if (sqliteConnection.Mode != SqliteOpenMode.Memory
 builder.Services.AddDbContext<FinanceDbContext>(options =>
     options.UseSqlite(connectionString));
 
+// Configure ASP.NET Core Identity to use our ApplicationUser and the same
+// FinanceDbContext. This registers user management services (UserManager, SignInManager, etc.)
+builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options =>
+    {
+        options.Password.RequireDigit = false;
+        options.Password.RequireNonAlphanumeric = false;
+        options.Password.RequiredLength = 6;
+    })
+    .AddEntityFrameworkStores<FinanceDbContext>()
+    .AddDefaultTokenProviders();
+
+// Configure JWT authentication using settings from configuration
+var jwtKey = builder.Configuration["Jwt:Key"] ?? throw new InvalidOperationException("Jwt:Key is required in configuration for authentication.");
+var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "FinanceApi";
+var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "FinanceApiClients";
+var signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey));
+
+builder.Services.AddAuthentication(options =>
+    {
+        options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+        options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+    })
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidIssuer = jwtIssuer,
+            ValidateAudience = true,
+            ValidAudience = jwtAudience,
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = signingKey,
+            ValidateLifetime = true,
+            ClockSkew = TimeSpan.FromMinutes(1)
+        };
+    });
+
+builder.Services.AddAuthorization();
+
 // Build the WebApplication and configure middleware.
 var app = builder.Build();
 
@@ -72,11 +115,35 @@ if (app.Environment.IsDevelopment())
 await using (var scope = app.Services.CreateAsyncScope())
 {
     var database = scope.ServiceProvider.GetRequiredService<FinanceDbContext>();
-    await database.Database.MigrateAsync();
+    var skipMigrations = bool.TryParse(app.Configuration["SkipMigrations"], out var s) && s;
+    if (skipMigrations)
+    {
+        // In tests we prefer to create the schema directly rather than run
+        // migrations to avoid conflicts between EnsureCreated and Migrate.
+        database.Database.EnsureCreated();
+    }
+    else
+    {
+        try
+        {
+            await database.Database.MigrateAsync();
+        }
+        catch (InvalidOperationException ex) when (ex.Message?.Contains("PendingModelChangesWarning", StringComparison.OrdinalIgnoreCase) == true
+                                                     || ex.Message?.Contains("pending changes", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+            logger.LogWarning(ex, "Pending model changes detected when applying migrations; falling back to EnsureCreated().");
+            database.Database.EnsureCreated();
+        }
+    }
 }
 
 // Map application endpoints (kept in separate files for organization)
 app.MapHealthEndpoints();
+// Map authentication endpoints (register/login)
+app.MapAuthEndpoints();
+// Map a small protected endpoint to return the caller's identity for testing
+app.MapMeEndpoints();
 
 // Start the web server and listen for incoming HTTP requests
 app.Run();

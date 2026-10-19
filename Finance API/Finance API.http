@@ -1,11 +1,37 @@
 @Finance_API_HostAddress = http://localhost:5106
-
+@Finance_API_HostAddress_Https = https://localhost:7056
+@token = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIyYjBmYTVlYy05MzliLTRhZWEtODlmOC0yNWExZjAwYmFiMmQiLCJ1bmlxdWVfbmFtZSI6ImFsaWNlIiwiaHR0cDovL3NjaGVtYXMueG1sc29hcC5vcmcvd3MvMjAwNS8wNS9pZGVudGl0eS9jbGFpbXMvbmFtZWlkZW50aWZpZXIiOiIyYjBmYTVlYy05MzliLTRhZWEtODlmOC0yNWExZjAwYmFiMmQiLCJleHAiOjE3OTI0MDI0MTEsImlzcyI6IkZpbmFuY2VBcGlEZXYiLCJhdWQiOiJGaW5hbmNlQXBpQ2xpZW50cyJ9.GFLUBbBaOqMKS9rOFOlInKReS0Hm1k-HUuMGO1TiHro
+  
 ### Check API and database readiness
 GET {{Finance_API_HostAddress}}/api/health
 Accept: application/json
 
-###
-
 ### Not found responses use Problem Details
 GET {{Finance_API_HostAddress}}/api/not-a-route
 Accept: application/problem+json
+
+### Register a new user
+POST {{Finance_API_HostAddress_Https}}/api/auth/register
+Content-Type: application/json
+
+{
+  "userName": "alice",
+  "email": "alice@example.com",
+  "password": "P@ssword1"
+}
+
+### Login and receive a JWT token
+POST {{Finance_API_HostAddress_Https}}/api/auth/login
+Content-Type: application/json
+
+{
+  "userName": "alice",
+  "password": "P@ssword1"
+}
+
+### Example protected endpoint using the returned token
+### Replace {{token}} with the value returned from the login request
+GET {{Finance_API_HostAddress_Https}}/api/me
+Authorization: Bearer {{token}}
+Accept: application/json
+
