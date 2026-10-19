@@ -189,6 +189,9 @@ ClientBin/
 *~
 *.dbmdl
 *.dbproj.schemaview
+Finance API/App_Data/*.db
+Finance API/App_Data/*.db-shm
+Finance API/App_Data/*.db-wal
 *.jfm
 *.pfx
 *.publishsettings

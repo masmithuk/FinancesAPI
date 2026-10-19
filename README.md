@@ -34,17 +34,32 @@ Recommended transfers are informational only. Users make transfers outside the a
 
 ## API implementation status
 
-The current development project is an ASP.NET Core Minimal API targeting .NET 10. It is still the generated sample scaffold: finance endpoints, authentication, and persistence have not yet been implemented. The persistence provider and detailed API contract are implementation decisions to settle in the foundation work.
+The active development project is an ASP.NET Core Minimal API targeting .NET 10. Its foundation includes EF Core with SQLite, startup-applied migrations, minimal API request validation, RFC 7807 Problem Details, a readiness endpoint, and development-only OpenAPI. Finance domain endpoints and authentication are still to be implemented.
 
 The repository also retains the earlier API implementation in `FinancesAPI/`. The current solution and development project are `Finance API.slnx` and `Finance API/Finance API.csproj`.
 
-### Run the current scaffold
+### Run the API
 
 ```powershell
-dotnet run --project "Finance API/Finance API.csproj"
+dotnet run --project "Finance API\Finance API.csproj"
 ```
 
-The sample OpenAPI document is available in Development. Replace the generated sample endpoint as finance API work is implemented.
+The API applies pending EF Core migrations at startup and stores its local SQLite database at `Finance API/App_Data/finance-api.db`. Override the connection string with the `ConnectionStrings__Finance` environment variable. The local `dotnet-ef` tool is pinned in `dotnet-tools.json`; add future migrations from the repository root with:
+
+```powershell
+dotnet tool restore
+dotnet tool run dotnet-ef migrations add NewMigrationName --project "Finance API\Finance API.csproj" --startup-project "Finance API\Finance API.csproj" --output-dir Persistence\Migrations
+```
+
+`GET /api/health` reports API/database readiness. In Development, the OpenAPI document is at `/openapi/v1.json`. The initial migration establishes EF Core migration tracking; domain tables are introduced alongside their API stories. Persistence and test-provider decisions are recorded in [ADR-0001](docs/adr/0001-persistence-provider.md).
+
+### Run tests
+
+```powershell
+dotnet test "Finance API.Tests\Finance API.Tests.csproj"
+```
+
+Integration tests use an isolated SQLite in-memory database and do not require Docker or a separate database server.
 
 ## API roadmap
 
