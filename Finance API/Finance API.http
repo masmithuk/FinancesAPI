@@ -1,8 +1,9 @@
 @Finance_API_HostAddress = http://localhost:5106
 @Finance_API_HostAddress_Https = https://localhost:7056
-@token = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIyYjBmYTVlYy05MzliLTRhZWEtODlmOC0yNWExZjAwYmFiMmQiLCJ1bmlxdWVfbmFtZSI6ImFsaWNlIiwiaHR0cDovL3NjaGVtYXMueG1sc29hcC5vcmcvd3MvMjAwNS8wNS9pZGVudGl0eS9jbGFpbXMvbmFtZWlkZW50aWZpZXIiOiIyYjBmYTVlYy05MzliLTRhZWEtODlmOC0yNWExZjAwYmFiMmQiLCJleHAiOjE3OTI0MDcxMTMsImlzcyI6IkZpbmFuY2VBcGlEZXYiLCJhdWQiOiJGaW5hbmNlQXBpQ2xpZW50cyJ9.bhIvJLE9kLGXmv_9K_qREcZNU4TIh0xXcieoRAsEOjU
+@token = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIyYjBmYTVlYy05MzliLTRhZWEtODlmOC0yNWExZjAwYmFiMmQiLCJ1bmlxdWVfbmFtZSI6ImFsaWNlIiwiaHR0cDovL3NjaGVtYXMueG1sc29hcC5vcmcvd3MvMjAwNS8wNS9pZGVudGl0eS9jbGFpbXMvbmFtZWlkZW50aWZpZXIiOiIyYjBmYTVlYy05MzliLTRhZWEtODlmOC0yNWExZjAwYmFiMmQiLCJleHAiOjE3OTI0MTU3NTMsImlzcyI6IkZpbmFuY2VBcGlEZXYiLCJhdWQiOiJGaW5hbmNlQXBpQ2xpZW50cyJ9._6SGRTL6JYIM1kamSDqmMe43CJAmOpI7mvc8euTQGBA
 @accountId = 24fa30b2-9a67-4a70-9b34-a1e4d915a81d
 @potId = 49b7c59e-8bf4-4498-9107-7b4626f219a8
+@occurrenceId = a590d356-b6f9-461a-b0b4-6b4db260ef40
 
 ### General
 ### Check API and database readiness
@@ -131,5 +132,29 @@ Content-Type: application/json
 
 ### List schedules for an account
 GET {{Finance_API_HostAddress_Https}}/api/accounts/{{accountId}}/schedules
+Authorization: Bearer {{token}}
+Accept: application/json
+
+### Occurrences
+### Create an occurrence (record actual income/expense)
+POST {{Finance_API_HostAddress_Https}}/api/accounts/{{accountId}}/occurrences
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "date": "2026-10-01",
+  "amount": 100.00,
+  "isIncome": false,
+  "scheduledItemId": null,
+  "externalReference": "ext-123"
+}
+
+### List occurrences for an account
+GET {{Finance_API_HostAddress_Https}}/api/accounts/{{accountId}}/occurrences
+Authorization: Bearer {{token}}
+Accept: application/json
+
+### Reconcile an occurrence (apply to balances once)
+POST {{Finance_API_HostAddress_Https}}/api/accounts/{{accountId}}/occurrences/{{occurrenceId}}/reconcile
 Authorization: Bearer {{token}}
 Accept: application/json

@@ -150,6 +150,8 @@ app.MapAccountsEndpoints();
 app.MapPotsEndpoints();
 // Map schedules (recurring income/expenses)
 app.MapSchedulesEndpoints();
+// Map occurrences (actual income/expense recordings)
+app.MapOccurrencesEndpoints();
 
 // Start the web server and listen for incoming HTTP requests
 app.Run();

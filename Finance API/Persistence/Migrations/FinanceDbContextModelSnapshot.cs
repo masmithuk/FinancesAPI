@@ -144,6 +144,45 @@ namespace Finance_API.Persistence.Migrations
                     b.ToTable("Goals");
                 });
 
+            modelBuilder.Entity("Finance_API.Persistence.Entities.Occurrence", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("AccountId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal>("Amount")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("Date")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ExternalReference")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsIncome")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("IsReconciled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid?>("ScheduledItemId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExternalReference")
+                        .IsUnique();
+
+                    b.HasIndex("ScheduledItemId");
+
+                    b.HasIndex("AccountId", "Date", "Amount", "IsIncome");
+
+                    b.ToTable("Occurrences");
+                });
+
             modelBuilder.Entity("Finance_API.Persistence.Entities.Pot", b =>
                 {
                     b.Property<Guid>("Id")
@@ -346,6 +385,23 @@ namespace Finance_API.Persistence.Migrations
                     b.Navigation("Pot");
                 });
 
+            modelBuilder.Entity("Finance_API.Persistence.Entities.Occurrence", b =>
+                {
+                    b.HasOne("Finance_API.Persistence.Entities.Account", "Account")
+                        .WithMany("Occurrences")
+                        .HasForeignKey("AccountId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Finance_API.Persistence.Entities.ScheduledItem", "ScheduledItem")
+                        .WithMany()
+                        .HasForeignKey("ScheduledItemId");
+
+                    b.Navigation("Account");
+
+                    b.Navigation("ScheduledItem");
+                });
+
             modelBuilder.Entity("Finance_API.Persistence.Entities.Pot", b =>
                 {
                     b.HasOne("Finance_API.Persistence.Entities.Account", "Account")
@@ -422,6 +478,8 @@ namespace Finance_API.Persistence.Migrations
             modelBuilder.Entity("Finance_API.Persistence.Entities.Account", b =>
                 {
                     b.Navigation("Balances");
+
+                    b.Navigation("Occurrences");
 
                     b.Navigation("Pots");
 

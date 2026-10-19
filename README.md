@@ -38,6 +38,17 @@ The active development project is an ASP.NET Core Minimal API targeting .NET 10.
 
 Implemented in this update: basic scheduling endpoints and persistence for recurring income/expenses (issue #5). These provide create/list operations for per-account schedules; occurrence generation and reconciliation are tracked in subsequent issues.
 
+Implemented in this update: recording actual occurrences and one-time reconciliation (issue #6). This includes:
+
+- A new Occurrence entity to represent recorded income/expense events and optional ExternalReference for idempotent imports.
+- Endpoints to create and list occurrences and to reconcile an occurrence. Reconciliation applies a Balance entry exactly once and marks the occurrence reconciled.
+- EF Core migrations to add the ScheduledItems and Occurrences tables; tests and HTTP requests for manual and automated verification.
+
+Notes and usage:
+- To reliably avoid duplicate recordings from an external source, provide an ExternalReference when creating occurrences; the server enforces a unique index on ExternalReference.
+- Reconciliation is idempotent: repeated reconcile calls are no-ops after the first application.
+- Run migrations locally with the dotnet-ef CLI (see the "Run the API" section). Tests use an in-memory SQLite provider and the SkipMigrations setting.
+
 The repository also retains the earlier API implementation in `FinancesAPI/`. The current solution and development project are `Finance API.slnx` and `Finance API/Finance API.csproj`.
 
 ### Run the API

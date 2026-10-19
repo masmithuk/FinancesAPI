@@ -19,6 +19,7 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options)
     public DbSet<Pot> Pots { get; set; } = null!;
     public DbSet<ScheduledItem> ScheduledItems { get; set; } = null!;
     public DbSet<Goal> Goals { get; set; } = null!;
+    public DbSet<Occurrence> Occurrences { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -40,6 +41,20 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options)
             .HasMany(a => a.ScheduledItems)
             .WithOne(s => s.Account)
             .HasForeignKey(s => s.AccountId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        // Occurrences (actual recorded income/expense events)
+        builder.Entity<Occurrence>()
+            .HasIndex(o => o.ExternalReference)
+            .IsUnique();
+
+        builder.Entity<Occurrence>()
+            .HasIndex(o => new { o.AccountId, o.Date, o.Amount, o.IsIncome });
+
+        builder.Entity<Account>()
+            .HasMany(a => a.Occurrences)
+            .WithOne(o => o.Account)
+            .HasForeignKey(o => o.AccountId)
             .OnDelete(DeleteBehavior.Cascade);
 
         // Pot has many Goals
