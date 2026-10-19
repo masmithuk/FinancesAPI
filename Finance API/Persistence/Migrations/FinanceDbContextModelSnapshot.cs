@@ -122,6 +122,48 @@ namespace Finance_API.Persistence.Migrations
                     b.ToTable("Balances");
                 });
 
+            modelBuilder.Entity("Finance_API.Persistence.Entities.Goal", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("DueDate")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("PotId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal>("TargetAmount")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PotId");
+
+                    b.ToTable("Goals");
+                });
+
+            modelBuilder.Entity("Finance_API.Persistence.Entities.Pot", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("AccountId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AccountId");
+
+                    b.ToTable("Pots");
+                });
+
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRole", b =>
                 {
                     b.Property<string>("Id")
@@ -261,6 +303,28 @@ namespace Finance_API.Persistence.Migrations
                     b.Navigation("Account");
                 });
 
+            modelBuilder.Entity("Finance_API.Persistence.Entities.Goal", b =>
+                {
+                    b.HasOne("Finance_API.Persistence.Entities.Pot", "Pot")
+                        .WithMany("Goals")
+                        .HasForeignKey("PotId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Pot");
+                });
+
+            modelBuilder.Entity("Finance_API.Persistence.Entities.Pot", b =>
+                {
+                    b.HasOne("Finance_API.Persistence.Entities.Account", "Account")
+                        .WithMany("Pots")
+                        .HasForeignKey("AccountId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Account");
+                });
+
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>", b =>
                 {
                     b.HasOne("Microsoft.AspNetCore.Identity.IdentityRole", null)
@@ -315,6 +379,13 @@ namespace Finance_API.Persistence.Migrations
             modelBuilder.Entity("Finance_API.Persistence.Entities.Account", b =>
                 {
                     b.Navigation("Balances");
+
+                    b.Navigation("Pots");
+                });
+
+            modelBuilder.Entity("Finance_API.Persistence.Entities.Pot", b =>
+                {
+                    b.Navigation("Goals");
                 });
 #pragma warning restore 612, 618
         }

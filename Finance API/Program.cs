@@ -146,6 +146,8 @@ app.MapAuthEndpoints();
 app.MapMeEndpoints();
 // Map accounts and balances endpoints
 app.MapAccountsEndpoints();
+// Map pots/goals endpoints
+app.MapPotsEndpoints();
 
 // Start the web server and listen for incoming HTTP requests
 app.Run();

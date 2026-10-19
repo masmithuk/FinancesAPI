@@ -21,4 +21,5 @@ public sealed class Account
     public string OwnerId { get; set; } = null!;
 
     public ICollection<Balance> Balances { get; set; } = new List<Balance>();
+    public ICollection<Pot> Pots { get; set; } = new List<Pot>();
 }

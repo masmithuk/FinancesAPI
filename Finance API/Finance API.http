@@ -1,7 +1,8 @@
 @Finance_API_HostAddress = http://localhost:5106
 @Finance_API_HostAddress_Https = https://localhost:7056
-@token = 
-@accountId = 
+@token = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIyYjBmYTVlYy05MzliLTRhZWEtODlmOC0yNWExZjAwYmFiMmQiLCJ1bmlxdWVfbmFtZSI6ImFsaWNlIiwiaHR0cDovL3NjaGVtYXMueG1sc29hcC5vcmcvd3MvMjAwNS8wNS9pZGVudGl0eS9jbGFpbXMvbmFtZWlkZW50aWZpZXIiOiIyYjBmYTVlYy05MzliLTRhZWEtODlmOC0yNWExZjAwYmFiMmQiLCJleHAiOjE3OTI0MDcxMTMsImlzcyI6IkZpbmFuY2VBcGlEZXYiLCJhdWQiOiJGaW5hbmNlQXBpQ2xpZW50cyJ9.bhIvJLE9kLGXmv_9K_qREcZNU4TIh0xXcieoRAsEOjU
+@accountId = 24fa30b2-9a67-4a70-9b34-a1e4d915a81d
+@potId = 49b7c59e-8bf4-4498-9107-7b4626f219a8
 
 ### General
 ### Check API and database readiness
@@ -71,5 +72,45 @@ Content-Type: application/json
 
 ### List balances for an account
 GET {{Finance_API_HostAddress_Https}}/api/accounts/{{accountId}}/balances
+Authorization: Bearer {{token}}
+Accept: application/json
+
+### Pots and Goals
+### Create a pot for an account
+POST {{Finance_API_HostAddress_Https}}/api/accounts/{{accountId}}/pots
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "Holiday"
+}
+
+### List pots for an account
+GET {{Finance_API_HostAddress_Https}}/api/accounts/{{accountId}}/pots
+Authorization: Bearer {{token}}
+Accept: application/json
+
+### Get a specific pot
+GET {{Finance_API_HostAddress_Https}}/api/accounts/{{accountId}}/pots/{{potId}}
+Authorization: Bearer {{token}}
+Accept: application/json
+
+### Create a goal on a pot
+POST {{Finance_API_HostAddress_Https}}/api/pots/{{potId}}/goals
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "targetAmount": 500.00,
+  "dueDate": "2027-01-01"
+}
+
+### List goals for a pot
+GET {{Finance_API_HostAddress_Https}}/api/pots/{{potId}}/goals
+Authorization: Bearer {{token}}
+Accept: application/json
+
+### Running (cumulative) balances for an account
+GET {{Finance_API_HostAddress_Https}}/api/accounts/{{accountId}}/running-balances
 Authorization: Bearer {{token}}
 Accept: application/json

@@ -16,6 +16,8 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options)
     // Accounts and balances for the finance domain
     public DbSet<Account> Accounts { get; set; } = null!;
     public DbSet<Balance> Balances { get; set; } = null!;
+    public DbSet<Pot> Pots { get; set; } = null!;
+    public DbSet<Goal> Goals { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -26,6 +28,26 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options)
             .HasMany(a => a.Balances)
             .WithOne(b => b.Account)
             .HasForeignKey(b => b.AccountId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        // Account has many Pots
+        builder.Entity<Account>()
+            .HasMany(a => a.Balances) // keep existing
+            .WithOne(b => b.Account)
+            .HasForeignKey(b => b.AccountId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<Account>()
+            .HasMany(a => a.Pots)
+            .WithOne(p => p.Account)
+            .HasForeignKey(p => p.AccountId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        // Pot has many Goals
+        builder.Entity<Pot>()
+            .HasMany(p => p.Goals)
+            .WithOne(g => g.Pot)
+            .HasForeignKey(g => g.PotId)
             .OnDelete(DeleteBehavior.Cascade);
     }
 }
