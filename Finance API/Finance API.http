@@ -1,7 +1,9 @@
 @Finance_API_HostAddress = http://localhost:5106
 @Finance_API_HostAddress_Https = https://localhost:7056
-@token = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIyYjBmYTVlYy05MzliLTRhZWEtODlmOC0yNWExZjAwYmFiMmQiLCJ1bmlxdWVfbmFtZSI6ImFsaWNlIiwiaHR0cDovL3NjaGVtYXMueG1sc29hcC5vcmcvd3MvMjAwNS8wNS9pZGVudGl0eS9jbGFpbXMvbmFtZWlkZW50aWZpZXIiOiIyYjBmYTVlYy05MzliLTRhZWEtODlmOC0yNWExZjAwYmFiMmQiLCJleHAiOjE3OTI0MDI0MTEsImlzcyI6IkZpbmFuY2VBcGlEZXYiLCJhdWQiOiJGaW5hbmNlQXBpQ2xpZW50cyJ9.GFLUBbBaOqMKS9rOFOlInKReS0Hm1k-HUuMGO1TiHro
-  
+@token = 
+@accountId = 
+
+### General
 ### Check API and database readiness
 GET {{Finance_API_HostAddress}}/api/health
 Accept: application/json
@@ -10,6 +12,7 @@ Accept: application/json
 GET {{Finance_API_HostAddress}}/api/not-a-route
 Accept: application/problem+json
 
+### Authentication (Auth)
 ### Register a new user
 POST {{Finance_API_HostAddress_Https}}/api/auth/register
 Content-Type: application/json
@@ -29,9 +32,44 @@ Content-Type: application/json
   "password": "P@ssword1"
 }
 
-### Example protected endpoint using the returned token
-### Replace {{token}} with the value returned from the login request
+### Protected endpoints (use Authorization: Bearer {{token}})
+### Get authenticated user info
 GET {{Finance_API_HostAddress_Https}}/api/me
 Authorization: Bearer {{token}}
 Accept: application/json
 
+### Accounts
+### Create an account (requires auth)
+POST {{Finance_API_HostAddress_Https}}/api/accounts
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "Checking"
+}
+
+### List accounts for the authenticated user
+GET {{Finance_API_HostAddress_Https}}/api/accounts
+Authorization: Bearer {{token}}
+Accept: application/json
+
+### Get a specific account
+GET {{Finance_API_HostAddress_Https}}/api/accounts/{{accountId}}
+Authorization: Bearer {{token}}
+Accept: application/json
+
+### Balances
+### Add a dated balance to an account (requires auth)
+POST {{Finance_API_HostAddress_Https}}/api/accounts/{{accountId}}/balances
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "date": "2026-10-18",
+  "amount": 123.45
+}
+
+### List balances for an account
+GET {{Finance_API_HostAddress_Https}}/api/accounts/{{accountId}}/balances
+Authorization: Bearer {{token}}
+Accept: application/json

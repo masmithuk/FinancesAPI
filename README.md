@@ -51,6 +51,32 @@ dotnet tool restore
 dotnet tool run dotnet-ef migrations add NewMigrationName --project "Finance API\Finance API.csproj" --startup-project "Finance API\Finance API.csproj" --output-dir Persistence\Migrations
 ```
 
+If you encounter "no such table" errors (for example: "no such table: Accounts" or "no such table: AspNetUsers") follow these steps to update your local database schema:
+
+1. Ensure the EF CLI tool is available:
+
+```powershell
+dotnet tool restore
+```
+
+2. Create a migration that captures your model changes. Use a descriptive name:
+
+```powershell
+dotnet tool run dotnet-ef migrations add AddIdentityAndAccounts --project "Finance API\Finance API.csproj" --startup-project "Finance API\Finance API.csproj" --context FinanceDbContext
+```
+
+3. Apply the migration to the configured database (this updates the SQLite file used by the app):
+
+```powershell
+dotnet tool run dotnet-ef database update --project "Finance API\Finance API.csproj" --startup-project "Finance API\Finance API.csproj" --context FinanceDbContext
+```
+
+Notes:
+- Use the explicit --project and --startup-project options because the project path contains spaces and to ensure the correct startup host is used.
+- The migration will create the required tables so the runtime no longer throws "no such table" exceptions.
+- Tests run with an in-memory database and a SkipMigrations setting that falls back to EnsureCreated(); do not rely on EnsureCreated for production.
+- Alternatively, use Visual Studio's Package Manager Console and run Add-Migration / Update-Database with Default project set to "Finance API".
+
 `GET /api/health` reports API/database readiness. In Development, the OpenAPI document is at `/openapi/v1.json`. The initial migration establishes EF Core migration tracking; domain tables are introduced alongside their API stories. Persistence and test-provider decisions are recorded in [ADR-0001](docs/adr/0001-persistence-provider.md).
 
 ### Run tests

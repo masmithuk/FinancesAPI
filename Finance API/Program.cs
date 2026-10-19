@@ -144,6 +144,8 @@ app.MapHealthEndpoints();
 app.MapAuthEndpoints();
 // Map a small protected endpoint to return the caller's identity for testing
 app.MapMeEndpoints();
+// Map accounts and balances endpoints
+app.MapAccountsEndpoints();
 
 // Start the web server and listen for incoming HTTP requests
 app.Run();
