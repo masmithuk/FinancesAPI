@@ -47,6 +47,13 @@ Implemented in this update: recording actual occurrences and one-time reconcilia
 Notes and usage:
 - To reliably avoid duplicate recordings from an external source, provide an ExternalReference when creating occurrences; the server enforces a unique index on ExternalReference.
 - Reconciliation is idempotent: repeated reconcile calls are no-ops after the first application.
+
+Implemented in this update: dated cash-flow forecasts and Safe to Spend (issue #7).
+
+Notes on forecasting (V1):
+- The forecast aggregates account-level dated Balances, expands scheduled items into dated occurrences (weekly, fortnightly, monthly, annual) within the current month, and includes unreconciled Occurrence entries as pending movements.
+- Safe to Spend is the lowest projected cumulative uncommitted cash balance from today through the end of the current month.
+- Pot funding prioritisation is not implemented in V1; pot shortfalls and detailed prioritisation are planned for a follow-up issue.
 - Run migrations locally with the dotnet-ef CLI (see the "Run the API" section). Tests use an in-memory SQLite provider and the SkipMigrations setting.
 
 The repository also retains the earlier API implementation in `FinancesAPI/`. The current solution and development project are `Finance API.slnx` and `Finance API/Finance API.csproj`.

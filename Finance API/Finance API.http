@@ -158,3 +158,9 @@ Accept: application/json
 POST {{Finance_API_HostAddress_Https}}/api/accounts/{{accountId}}/occurrences/{{occurrenceId}}/reconcile
 Authorization: Bearer {{token}}
 Accept: application/json
+
+### Forecast
+### Get forecast and Safe to Spend for an account
+GET {{Finance_API_HostAddress_Https}}/api/accounts/{{accountId}}/forecast
+Authorization: Bearer {{token}}
+Accept: application/json

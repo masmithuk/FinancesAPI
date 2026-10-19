@@ -95,6 +95,9 @@ builder.Services.AddAuthentication(options =>
 
 builder.Services.AddAuthorization();
 
+// Register forecast service
+builder.Services.AddScoped<Finance_API.Services.ForecastService>();
+
 // Build the WebApplication and configure middleware.
 var app = builder.Build();
 
@@ -152,6 +155,8 @@ app.MapPotsEndpoints();
 app.MapSchedulesEndpoints();
 // Map occurrences (actual income/expense recordings)
 app.MapOccurrencesEndpoints();
+// Map forecast endpoint
+app.MapForecastEndpoints();
 
 // Start the web server and listen for incoming HTTP requests
 app.Run();
