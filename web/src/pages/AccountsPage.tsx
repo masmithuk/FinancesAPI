@@ -7,7 +7,7 @@ import { dateLabel, money, today } from "../shared/format";
 import { EmptyState, ErrorMessage, PageHeading, Panel } from "../shared/Ui";
 
 export default function AccountsPage({ token }: { token: string }) {
-  type BalanceEdit = { id: string; date: string; amount: string };
+  type BalanceEdit = { id: string; date: string; amount: string; note: string };
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [balances, setBalances] = useState<Balance[]>([]);
@@ -16,6 +16,7 @@ export default function AccountsPage({ token }: { token: string }) {
   const [accountName, setAccountName] = useState("");
   const [balanceDate, setBalanceDate] = useState(today());
   const [amount, setAmount] = useState("");
+  const [note, setNote] = useState("");
   const [editingBalance, setEditingBalance] = useState<BalanceEdit | null>(null);
   const [balanceHistoryError, setBalanceHistoryError] = useState("");
   const [error, setError] = useState("");
@@ -77,8 +78,9 @@ export default function AccountsPage({ token }: { token: string }) {
     if (!selectedId) return;
     setError("");
     try {
-      await api.createBalance(token, selectedId, balanceDate, Number(amount));
+      await api.createBalance(token, selectedId, balanceDate, Number(amount), note);
       setAmount("");
+      setNote("");
       await loadBalances(selectedId);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to add balance.");
@@ -96,6 +98,7 @@ export default function AccountsPage({ token }: { token: string }) {
         editingBalance.id,
         editingBalance.date,
         Number(editingBalance.amount),
+        editingBalance.note,
       );
       setEditingBalance(null);
     } catch (reason) {
@@ -226,6 +229,13 @@ export default function AccountsPage({ token }: { token: string }) {
                     onChange={setAmount}
                     placeholder="0.00"
                   />
+                  <TextField
+                    label="Note (optional)"
+                    maxLength={200}
+                    value={note}
+                    onChange={setNote}
+                    placeholder="What is this for?"
+                  />
                   <Button variant="primary">
                     Save balance <span>→</span>
                   </Button>
@@ -278,6 +288,14 @@ export default function AccountsPage({ token }: { token: string }) {
                                   setEditingBalance({ ...editingBalance, amount: value })
                                 }
                               />
+                              <TextField
+                                label="Note (optional)"
+                                maxLength={200}
+                                value={editingBalance.note}
+                                onChange={(value) =>
+                                  setEditingBalance({ ...editingBalance, note: value })
+                                }
+                              />
                             </div>
                             <div className="activity-edit-actions">
                               <Button variant="primary" size="small">
@@ -296,6 +314,11 @@ export default function AccountsPage({ token }: { token: string }) {
                         ) : (
                           <>
                             <div className="date-stamp">{dateLabel(balance.date)}</div>
+                            {balance.note && (
+                              <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
+                                {balance.note}
+                              </span>
+                            )}
                             <strong>{money(balance.amount)}</strong>
                             <div className="activity-row-actions">
                               <Button
@@ -306,6 +329,7 @@ export default function AccountsPage({ token }: { token: string }) {
                                     id: balance.id,
                                     date: balance.date.slice(0, 10),
                                     amount: String(balance.amount),
+                                    note: balance.note ?? "",
                                   })
                                 }
                               >
@@ -337,12 +361,24 @@ export default function AccountsPage({ token }: { token: string }) {
                     {running
                       .slice(-5)
                       .reverse()
-                      .map((item) => (
-                        <div className="data-row" key={item.date}>
-                          <div className="date-stamp">{dateLabel(item.date)}</div>
-                          <strong>{money(item.cumulativeAmount)}</strong>
-                        </div>
-                      ))}
+                      .map((item) => {
+                        const notes = balances
+                          .filter((balance) => balance.date.slice(0, 10) === item.date.slice(0, 10))
+                          .map((balance) => balance.note)
+                          .filter(Boolean)
+                          .join(" · ");
+                        return (
+                          <div className="data-row" key={item.date}>
+                            <div className="date-stamp">{dateLabel(item.date)}</div>
+                            {notes && (
+                              <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
+                                {notes}
+                              </span>
+                            )}
+                            <strong>{money(item.cumulativeAmount)}</strong>
+                          </div>
+                        );
+                      })}
                   </div>
                 </Panel>
               )}

@@ -7,6 +7,7 @@ export interface Balance {
   id: string;
   date: string;
   amount: number;
+  note?: string | null;
 }
 
 export interface Pot {
@@ -220,10 +221,17 @@ export const api = {
       `/api/accounts/${accountId}/running-balances`,
       token,
     ),
-  createBalance: (token: string, accountId: string, date: string, amount: number) =>
+  createBalance: (
+    token: string,
+    accountId: string,
+    date: string,
+    amount: number,
+    note?: string,
+  ) =>
     post<Balance>(`/api/accounts/${accountId}/balances`, token, {
       date,
       amount,
+      note,
     }),
   updateBalance: (
     token: string,
@@ -231,10 +239,11 @@ export const api = {
     balanceId: string,
     date: string,
     amount: number,
+    note?: string,
   ) =>
     request<Balance>(`/api/accounts/${accountId}/balances/${balanceId}`, token, {
       method: "PUT",
-      body: JSON.stringify({ date, amount }),
+      body: JSON.stringify({ date, amount, note }),
     }),
   deleteBalance: (token: string, accountId: string, balanceId: string) =>
     request<void>(`/api/accounts/${accountId}/balances/${balanceId}`, token, {

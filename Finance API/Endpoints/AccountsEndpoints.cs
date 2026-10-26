@@ -75,17 +75,25 @@ public static class AccountsEndpoints
     /// <summary>
     /// Payload to add a dated balance to an account.
     /// </summary>
-    public sealed record AddBalanceRequest(DateTime Date, decimal Amount);
+    public sealed record AddBalanceRequest(DateTime Date, decimal Amount, string? Note = null);
 
     /// <summary>
     /// Payload to update a dated account balance.
     /// </summary>
-    public sealed record UpdateBalanceRequest(DateTime Date, decimal Amount);
+    public sealed record UpdateBalanceRequest(DateTime Date, decimal Amount, string? Note = null);
 
     /// <summary>
     /// Public representation of a balance returned by the API.
     /// </summary>
-    public sealed record BalanceResponse(Guid Id, DateTime Date, decimal Amount);
+    public sealed record BalanceResponse(Guid Id, DateTime Date, decimal Amount, string? Note = null);
+
+    private const int MaxNoteLength = 200;
+
+    private static string? NormalizeNote(string? note)
+    {
+        var trimmed = note?.Trim();
+        return string.IsNullOrEmpty(trimmed) ? null : trimmed;
+    }
 
     /// <summary>
     /// Extracts the current user's id from the ClaimsPrincipal. We prefer
@@ -144,11 +152,15 @@ public static class AccountsEndpoints
         var account = await db.Accounts.FindAsync(id);
         if (account is null || account.OwnerId != ownerId) return Results.NotFound();
 
-        var balance = new Balance { AccountId = id, Date = request.Date.Date, Amount = request.Amount };
+        var note = NormalizeNote(request.Note);
+        if (note is { Length: > MaxNoteLength })
+            return Results.BadRequest(new { errors = new[] { $"Note must be {MaxNoteLength} characters or fewer." } });
+
+        var balance = new Balance { AccountId = id, Date = request.Date.Date, Amount = request.Amount, Note = note };
         db.Balances.Add(balance);
         await db.SaveChangesAsync();
 
-        return Results.Created($"/api/accounts/{id}/balances/{balance.Id}", new BalanceResponse(balance.Id, balance.Date, balance.Amount));
+        return Results.Created($"/api/accounts/{id}/balances/{balance.Id}", new BalanceResponse(balance.Id, balance.Date, balance.Amount, balance.Note));
     }
 
     /// <summary>
@@ -163,7 +175,7 @@ public static class AccountsEndpoints
         var balances = await db.Balances
             .Where(b => b.AccountId == id)
             .OrderByDescending(b => b.Date)
-            .Select(b => new BalanceResponse(b.Id, b.Date, b.Amount))
+            .Select(b => new BalanceResponse(b.Id, b.Date, b.Amount, b.Note))
             .ToListAsync();
 
         return Results.Ok(balances);
@@ -194,11 +206,16 @@ public static class AccountsEndpoints
         if (await db.PotContributions.AnyAsync(item => item.BalanceId == balanceId, cancellationToken))
             return Results.Conflict(new { detail = "Update this balance through its linked pot contribution." });
 
+        var note = NormalizeNote(request.Note);
+        if (note is { Length: > MaxNoteLength })
+            return Results.BadRequest(new { errors = new[] { $"Note must be {MaxNoteLength} characters or fewer." } });
+
         balance.Date = request.Date.Date;
         balance.Amount = request.Amount;
+        balance.Note = note;
         await db.SaveChangesAsync(cancellationToken);
 
-        return Results.Ok(new BalanceResponse(balance.Id, balance.Date, balance.Amount));
+        return Results.Ok(new BalanceResponse(balance.Id, balance.Date, balance.Amount, balance.Note));
     }
 
     /// <summary>

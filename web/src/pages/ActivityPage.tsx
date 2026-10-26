@@ -118,16 +118,6 @@ export default function ActivityPage({ token }: { token: string }) {
     }
   }
 
-  async function reconcile(item: Occurrence) {
-    setError("");
-    try {
-      await api.reconcile(token, accountId, item.id);
-      await loadActivity(accountId);
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Unable to reconcile activity.");
-    }
-  }
-
   async function saveOccurrence(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!editingOccurrence) return;
@@ -316,7 +306,7 @@ export default function ActivityPage({ token }: { token: string }) {
           <section className="content-grid activity-lists">
             <Panel
               title="Recent activity"
-              subtitle="Reconcile an item to apply it to the account balance"
+              subtitle="Applied to the account balance automatically on its date"
             >
               {occurrences.length ? (
                 <div className="data-list">
@@ -400,19 +390,14 @@ export default function ActivityPage({ token }: { token: string }) {
                             {item.externalReference || (item.isIncome ? "Income" : "Expense")}
                           </strong>
                           <small>
-                            {dateLabel(item.date)} · {item.isReconciled ? "Reconciled" : "Pending"}
-                          </small>
+                            {dateLabel(item.date)} · {item.isReconciled ? "Applied" : "Scheduled"}
+                            </small>
                         </div>
                         <strong className={item.isIncome ? "amount-positive" : ""}>
-                          {item.isIncome ? "+" : "−"}
-                          {money(item.amount)}
+                            {item.isIncome ? "+" : "−"}
+                            {money(item.amount)}
                         </strong>
                         <div className="activity-row-actions">
-                          {!item.isReconciled && (
-                            <Button variant="outline" size="small" onClick={() => reconcile(item)}>
-                              Reconcile
-                            </Button>
-                          )}
                           <Button
                             variant="outline"
                             size="small"

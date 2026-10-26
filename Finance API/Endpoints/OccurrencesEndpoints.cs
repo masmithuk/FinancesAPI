@@ -97,9 +97,24 @@ public static class OccurrencesEndpoints
         };
 
         db.Occurrences.Add(occ);
+        ApplyIfDue(db, occ);
         await db.SaveChangesAsync(cancellationToken);
 
         return Results.Created($"/api/accounts/{accountId}/occurrences/{occ.Id}", new OccurrenceResponse(occ.Id, occ.Date, occ.Amount, occ.IsIncome, occ.IsReconciled, occ.ExternalReference));
+    }
+
+    // Activity is applied to the account balance automatically once its date has arrived.
+    private static void ApplyIfDue(FinanceDbContext db, Occurrence occ)
+    {
+        if (occ.IsReconciled || occ.Date.Date > DateTime.UtcNow.Date) return;
+        db.Balances.Add(new Balance { AccountId = occ.AccountId, Date = occ.Date, Amount = occ.IsIncome ? occ.Amount : -occ.Amount, Note = OccurrenceNote(occ) });
+        occ.IsReconciled = true;
+    }
+
+    private static string OccurrenceNote(Occurrence occ)
+    {
+        var label = string.IsNullOrWhiteSpace(occ.ExternalReference) ? (occ.IsIncome ? "Income" : "Expense") : occ.ExternalReference.Trim();
+        return label.Length > 200 ? label[..200] : label;
     }
 
     private static async Task<IResult> ListOccurrencesAsync(Guid accountId, FinanceDbContext db, ClaimsPrincipal user, Finance_API.Services.IUserContextService userContext, CancellationToken cancellationToken)
@@ -109,6 +124,16 @@ public static class OccurrencesEndpoints
 
         var account = await db.Accounts.FindAsync([accountId], cancellationToken);
         if (account is null || account.OwnerId != ownerId) return Results.NotFound();
+
+        var today = DateTime.UtcNow.Date;
+        var due = await db.Occurrences
+            .Where(o => o.AccountId == accountId && !o.IsReconciled && o.Date <= today)
+            .ToListAsync(cancellationToken);
+        if (due.Count > 0)
+        {
+            foreach (var item in due) ApplyIfDue(db, item);
+            await db.SaveChangesAsync(cancellationToken);
+        }
 
         var list = await db.Occurrences
             .Where(o => o.AccountId == accountId)
@@ -138,7 +163,7 @@ public static class OccurrencesEndpoints
 
         // Apply to balances exactly once
         var balanceAmount = occ.IsIncome ? occ.Amount : -occ.Amount;
-        var balance = new Balance { AccountId = accountId, Date = occ.Date, Amount = balanceAmount };
+        var balance = new Balance { AccountId = accountId, Date = occ.Date, Amount = balanceAmount, Note = OccurrenceNote(occ) };
         db.Balances.Add(balance);
 
         occ.IsReconciled = true;
@@ -253,6 +278,6 @@ public static class OccurrencesEndpoints
         DateTime date,
         decimal amount)
     {
-        db.Balances.Add(new Balance { AccountId = accountId, Date = date.Date, Amount = amount });
+        db.Balances.Add(new Balance { AccountId = accountId, Date = date.Date, Amount = amount, Note = "Correction" });
     }
 }

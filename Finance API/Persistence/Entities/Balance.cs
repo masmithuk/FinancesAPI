@@ -22,5 +22,11 @@ public sealed class Balance
     [Required]
     public Guid AccountId { get; set; }
 
+    /// <summary>
+    /// Optional free-text note describing what the amount was for.
+    /// </summary>
+    [MaxLength(200)]
+    public string? Note { get; set; }
+
     public Account? Account { get; set; }
 }
