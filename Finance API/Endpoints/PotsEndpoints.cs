@@ -151,7 +151,7 @@ public static class PotsEndpoints
     /// <summary>
     /// Response representing a running/cumulative balance for a given date.
     /// </summary>
-    public sealed record RunningBalanceResponse(DateTime Date, decimal CumulativeAmount);
+    public sealed record RunningBalanceResponse(DateTime Date, decimal CumulativeAmount, decimal Change = 0m, int Entries = 0);
 
     // User id extraction handled by IUserContextService
 
@@ -554,7 +554,7 @@ public static class PotsEndpoints
         var grouped = await db.Balances
             .Where(b => b.AccountId == accountId)
             .GroupBy(b => b.Date.Date)
-            .Select(g => new { Date = g.Key, Amount = g.Sum(b => b.Amount) })
+            .Select(g => new { Date = g.Key, Amount = g.Sum(b => b.Amount), Count = g.Count() })
             .OrderBy(x => x.Date)
             .ToListAsync();
 
@@ -563,7 +563,7 @@ public static class PotsEndpoints
         foreach (var item in grouped)
         {
             cumulative += item.Amount;
-            result.Add(new RunningBalanceResponse(item.Date, cumulative));
+            result.Add(new RunningBalanceResponse(item.Date, cumulative, item.Amount, item.Count));
         }
 
         return Results.Ok(result);

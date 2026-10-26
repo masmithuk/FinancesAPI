@@ -236,6 +236,7 @@ public sealed class PaydayPlanTests
                     Frequency = 2,
                     IsIncome = false
                 });
+            db.Balances.Add(new Balance { Account = santander, Amount = 5000m, Date = today.AddDays(-1) });
             await db.SaveChangesAsync();
             nationwideId = nationwide.Id;
             santanderId = santander.Id;
@@ -248,6 +249,8 @@ public sealed class PaydayPlanTests
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var root = document.RootElement;
 
+        Assert.Equal(5000m, root.GetProperty("currentBalance").GetDecimal());
+        Assert.Equal(967.53m, root.GetProperty("leftToSpend").GetDecimal());
         Assert.Equal(4349.59m, root.GetProperty("scheduledIncome").GetDecimal());
         Assert.Equal(3382.06m, root.GetProperty("scheduledExpenses").GetDecimal());
         Assert.Equal(967.53m, root.GetProperty("discretionaryIncome").GetDecimal());

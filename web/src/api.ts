@@ -89,6 +89,7 @@ export interface FinancialOverview {
     accountId: string;
     name: string;
     availableForSpending: number;
+    balance?: number;
   }>;
   potShortfalls: Array<{
     potId: string;
@@ -119,6 +120,8 @@ export interface PaydayPlan {
   scheduledIncome: number;
   scheduledExpenses: number;
   discretionaryIncome: number;
+  currentBalance?: number;
+  leftToSpend?: number;
   accounts: Array<{
     accountId: string;
     accountName: string;
@@ -242,7 +245,7 @@ export const api = {
       token,
     ),
   runningBalances: (token: string, accountId: string) =>
-    request<Array<{ date: string; cumulativeAmount: number }>>(
+    request<Array<{ date: string; cumulativeAmount: number; change?: number; entries?: number }>>(
       `/api/accounts/${accountId}/running-balances`,
       token,
     ),

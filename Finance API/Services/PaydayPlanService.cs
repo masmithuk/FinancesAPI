@@ -19,7 +19,9 @@ public sealed record PaydayPlanResponse(
     decimal ScheduledExpenses,
     decimal DiscretionaryIncome,
     IReadOnlyList<AccountFundingResponse> Accounts,
-    IReadOnlyList<TransferRecommendationResponse> Transfers);
+    IReadOnlyList<TransferRecommendationResponse> Transfers,
+    decimal CurrentBalance = 0m,
+    decimal LeftToSpend = 0m);
 
 /// <summary>An account's scheduled expenses and any amount left unfunded.</summary>
 public sealed record AccountFundingResponse(
@@ -41,6 +43,7 @@ public sealed class PaydayPlanService(FinanceDbContext db) : IPaydayPlanService
 {
     private const int PaydayGroupingDays = 2;
     private const int PlanningHorizonMonths = 18;
+    private const int PlanningLookBackMonths = 2;
 
     private sealed record PayWindow(DateTime Start, DateTime End);
     private sealed record CashFlowEvent(Guid AccountId, DateTime Date, decimal Amount, bool IsIncome);
@@ -68,8 +71,9 @@ public sealed class PaydayPlanService(FinanceDbContext db) : IPaydayPlanService
         }
 
         var scheduleHorizon = today.AddMonths(PlanningHorizonMonths);
-        var payWindows = BuildPayWindows(incomeSchedules, today, scheduleHorizon);
-        var payWindow = payWindows.FirstOrDefault(window => window.Start <= today && window.End >= today)
+        var payWindows = BuildPayWindows(incomeSchedules, today.AddMonths(-PlanningLookBackMonths), scheduleHorizon);
+        // The current pay period starts at the most recent payday, even if that payday was a few days ago.
+        var payWindow = payWindows.LastOrDefault(window => window.Start <= today)
             ?? payWindows.FirstOrDefault(window => window.Start >= today);
         if (payWindow is null)
         {
@@ -156,21 +160,41 @@ public sealed class PaydayPlanService(FinanceDbContext db) : IPaydayPlanService
                 incomeAccountIds.Contains(account.Id)))
             .ToList();
 
-        var scheduledIncome = planEvents
-            .Where(item => item.IsIncome)
-            .Sum(item => item.Amount);
-        var scheduledExpenses = -planEvents
-            .Where(item => !item.IsIncome)
-            .Sum(item => item.Amount);
+        var currentBalance = await db.Balances
+            .Where(balance => accountIds.Contains(balance.AccountId) && balance.Date.Date <= today)
+            .SumAsync(balance => (decimal?)balance.Amount, cancellationToken) ?? 0m;
+
+        // Whole pay period, from payday to the next payday: every planned income and expense.
+        var periodStart = payWindow.Start;
+        var periodPlans = schedules
+            .SelectMany(schedule => GetOccurrences(schedule, periodStart, planEnd.AddDays(-1))
+                .Select(_ => new { schedule.IsIncome, schedule.Amount }))
+            .ToList();
+        var periodIncome = periodPlans.Where(plan => plan.IsIncome).Sum(plan => plan.Amount);
+        var periodExpenses = periodPlans.Where(plan => !plan.IsIncome).Sum(plan => plan.Amount);
+
+        // Money actually spent in the period, across all accounts. Incoming activity is ignored: it is
+        // mostly transfers between the user's own accounts, and real income comes from the income plans.
+        var spentActivity = await db.Occurrences
+            .Where(occurrence =>
+                accountIds.Contains(occurrence.AccountId) &&
+                !occurrence.IsIncome &&
+                occurrence.Date.Date >= periodStart &&
+                occurrence.Date.Date < planEnd)
+            .ToListAsync(cancellationToken);
+        var spent = spentActivity.Sum(o => o.Amount);
+
         return new PaydayPlanResponse(
             payWindow.Start,
             payWindow.End,
             nextPayday.Start,
-            scheduledIncome,
-            scheduledExpenses,
-            scheduledIncome - scheduledExpenses,
+            periodIncome,
+            periodExpenses,
+            periodIncome - periodExpenses,
             accountResponses,
-            transfers);
+            transfers,
+            currentBalance,
+            periodIncome - periodExpenses - spent);
     }
 
     private static PaydayPlanResponse EmptyPlan() =>
@@ -186,16 +210,38 @@ public sealed class PaydayPlanService(FinanceDbContext db) : IPaydayPlanService
             .Distinct()
             .Order()
             .ToList();
+        // Smaller incomes (e.g. child benefit) must not split the month into several pay periods.
+        var largest = incomeSchedules.Max(schedule => schedule.Amount);
+        var primaryDates = incomeSchedules
+            .Where(schedule => schedule.Amount * 2 >= largest)
+            .SelectMany(schedule => GetOccurrences(schedule, from, to))
+            .Distinct()
+            .Order()
+            .ToList();
         var windows = new List<PayWindow>();
-        foreach (var date in dates)
+        foreach (var date in primaryDates)
         {
             if (windows.Count == 0 || (date - windows[^1].End).Days > PaydayGroupingDays)
             {
-                windows.Add(new PayWindow(date, date));
+                var start = dates
+                    .Where(other => other <= date && (date - other).Days <= PaydayGroupingDays)
+                    .DefaultIfEmpty(date)
+                    .Min();
+                windows.Add(new PayWindow(start, date));
             }
             else
             {
                 windows[^1] = windows[^1] with { End = date };
+            }
+        }
+
+        for (var i = 0; i < windows.Count; i++)
+        {
+            var end = windows[i].End;
+            var lateDates = dates.Where(other => other > end && (other - end).Days <= PaydayGroupingDays).ToList();
+            if (lateDates.Count > 0)
+            {
+                windows[i] = windows[i] with { End = lateDates.Max() };
             }
         }
 

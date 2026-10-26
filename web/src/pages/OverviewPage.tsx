@@ -207,6 +207,12 @@ export default function OverviewPage({
                 {paydayPlan ? money(paydayPlan.discretionaryIncome) : "—"}
               </strong>
               <p>Total income less expenses due in this pay period.</p>
+              {paydayPlan?.leftToSpend !== undefined && (
+                <p className="text-sm">
+                  <strong>{money(paydayPlan.leftToSpend)} left to spend</strong> — discretionary
+                  income minus everything you’ve spent so far this pay period, across all accounts.
+                </p>
+              )}
               {discretionarySuggestions.length > 0 && (
                 <div className="grid gap-1 text-sm">
                   <strong>Suggested use of your discretionary income</strong>
@@ -228,15 +234,6 @@ export default function OverviewPage({
               </div>
             </div>
             <MetricCard
-              icon="▤"
-              tone="sage"
-              label="ACCOUNTS"
-              value={summary?.accounts.length ?? 0}
-              description="Connected to your plan"
-              actionLabel="View accounts"
-              onAction={() => onNavigate("accounts")}
-            />
-            <MetricCard
               icon="◎"
               tone="peach"
               label="POT SHORTFALLS"
@@ -255,11 +252,29 @@ export default function OverviewPage({
                       <span className="account-symbol">£</span>
                       <span className="account-name">
                         {account.name}
-                        <small>Available for spending</small>
+                        <small>Balance today</small>
                       </span>
-                      <strong>{money(account.availableForSpending)}</strong>
+                      <strong>{money(account.balance ?? account.availableForSpending)}</strong>
                     </div>
                   ))}
+                  <div className="account-row">
+                    <span className="account-symbol">Σ</span>
+                    <span className="account-name">
+                      Total
+                      <small>
+                        Across {summary.accounts.length}{" "}
+                        {summary.accounts.length === 1 ? "account" : "accounts"}
+                      </small>
+                    </span>
+                    <strong>
+                      {money(
+                        summary.accounts.reduce(
+                          (sum, a) => sum + (a.balance ?? a.availableForSpending),
+                          0,
+                        ),
+                      )}
+                    </strong>
+                  </div>
                   <Button
                     variant="link"
                     className="panel-footer-link"

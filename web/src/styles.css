@@ -317,7 +317,7 @@ p {
 }
 .overview-grid {
   display: grid;
-  grid-template-columns: minmax(280px, 1.35fr) minmax(175px, 0.8fr) minmax(175px, 0.8fr);
+  grid-template-columns: minmax(280px, 1.35fr) minmax(175px, 0.8fr);
   gap: 15px;
   margin-bottom: 17px;
 }

@@ -378,16 +378,23 @@ public static class OccurrencesEndpoints
 
         if (occurrence.IsReconciled)
         {
-            AddBalanceCorrection(
-                db,
-                occurrence.AccountId,
-                occurrence.Date,
-                -SignedAmount(occurrence.Amount, occurrence.IsIncome));
-            AddBalanceCorrection(
-                db,
-                request.AccountId,
-                request.Date.Date,
-                SignedAmount(request.Amount, request.IsIncome));
+            var applied = await FindAppliedBalanceAsync(db, occurrence, cancellationToken);
+            var newSigned = SignedAmount(request.Amount, request.IsIncome);
+            if (applied is not null)
+            {
+                applied.AccountId = request.AccountId;
+                applied.Date = request.Date.Date;
+                applied.Amount = newSigned;
+            }
+            else
+            {
+                AddBalanceCorrection(
+                    db,
+                    occurrence.AccountId,
+                    occurrence.Date,
+                    -SignedAmount(occurrence.Amount, occurrence.IsIncome));
+                AddBalanceCorrection(db, request.AccountId, request.Date.Date, newSigned);
+            }
         }
 
         occurrence.AccountId = request.AccountId;
@@ -479,16 +486,40 @@ public static class OccurrencesEndpoints
 
         if (occurrence.IsReconciled)
         {
-            AddBalanceCorrection(
-                db,
-                occurrence.AccountId,
-                occurrence.Date,
-                -SignedAmount(occurrence.Amount, occurrence.IsIncome));
+            var applied = await FindAppliedBalanceAsync(db, occurrence, cancellationToken);
+            if (applied is not null)
+            {
+                db.Balances.Remove(applied);
+            }
+            else
+            {
+                AddBalanceCorrection(
+                    db,
+                    occurrence.AccountId,
+                    occurrence.Date,
+                    -SignedAmount(occurrence.Amount, occurrence.IsIncome));
+            }
         }
 
         db.Occurrences.Remove(occurrence);
         await db.SaveChangesAsync(cancellationToken);
         return Results.NoContent();
+    }
+
+    // The balance entry created when the activity was applied, so edits and deletes can change it
+    // in place instead of piling up "Correction" entries.
+    private static async Task<Balance?> FindAppliedBalanceAsync(
+        FinanceDbContext db,
+        Occurrence occurrence,
+        CancellationToken cancellationToken)
+    {
+        var amount = SignedAmount(occurrence.Amount, occurrence.IsIncome);
+        var note = OccurrenceNote(occurrence);
+        var date = occurrence.Date.Date;
+        var candidates = await db.Balances
+            .Where(b => b.AccountId == occurrence.AccountId && b.Amount == amount && b.Note == note)
+            .ToListAsync(cancellationToken);
+        return candidates.FirstOrDefault(b => b.Date.Date == date);
     }
 
     private static decimal SignedAmount(decimal amount, bool isIncome) => isIncome ? amount : -amount;

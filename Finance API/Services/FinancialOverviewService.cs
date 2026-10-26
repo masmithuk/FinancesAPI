@@ -25,7 +25,7 @@ public sealed class FinancialOverviewService
     public record SetupStatus(bool HasAccount, bool HasBalance, bool HasPotIfGoals, IEnumerable<string> Missing);
 
     // AvailableForSpending represents the account balance plus near-term scheduled and pending movements
-    public record AccountSummary(Guid AccountId, string Name, decimal AvailableForSpending);
+    public record AccountSummary(Guid AccountId, string Name, decimal AvailableForSpending, decimal Balance = 0m);
 
     public record PotShortfall(Guid PotId, string PotName, decimal Shortfall);
 
@@ -92,7 +92,7 @@ public sealed class FinancialOverviewService
                 .SumAsync(o => (decimal?)(o.IsIncome ? o.Amount : -o.Amount)) ?? 0m;
 
             var available = starting + scheduledSum + pendingSum;
-            accountSummaries.Add(new AccountSummary(a.Id, a.Name, available));
+            accountSummaries.Add(new AccountSummary(a.Id, a.Name, available, starting));
         }
 
         // Compute pot shortfalls: goal.TargetAmount - current pot balances (approximate by account available for now)
@@ -149,7 +149,7 @@ public sealed class FinancialOverviewService
             var a = accountSummaries[i];
             if (allocations.TryGetValue(a.AccountId, out var alloc))
             {
-                accountSummaries[i] = new AccountSummary(a.AccountId, a.Name, a.AvailableForSpending - alloc);
+                accountSummaries[i] = a with { AvailableForSpending = a.AvailableForSpending - alloc };
             }
         }
 

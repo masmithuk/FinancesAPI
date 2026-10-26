@@ -13,7 +13,9 @@ export default function AccountsPage({ token }: { token: string }) {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [balances, setBalances] = useState<Balance[]>([]);
-  const [running, setRunning] = useState<Array<{ date: string; cumulativeAmount: number }>>([]);
+  const [running, setRunning] = useState<
+    Array<{ date: string; cumulativeAmount: number; change?: number; entries?: number }>
+  >([]);
   const [forecast, setForecast] = useState<Forecast | null>(null);
   const [accountName, setAccountName] = useState("");
   const [balanceDate, setBalanceDate] = useState(today());
@@ -417,19 +419,15 @@ export default function AccountsPage({ token }: { token: string }) {
                       .slice(-5)
                       .reverse()
                       .map((item) => {
-                        const notes = balances
-                          .filter((balance) => balance.date.slice(0, 10) === item.date.slice(0, 10))
-                          .map((balance) => balance.note)
-                          .filter(Boolean)
-                          .join(" · ");
+                        const entries = item.entries ?? 0;
                         return (
                           <div className="data-row" key={item.date}>
                             <div className="date-stamp">{dateLabel(item.date)}</div>
-                            {notes && (
-                              <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
-                                {notes}
-                              </span>
-                            )}
+                            <span className="min-w-0 flex-1 text-sm text-muted-foreground">
+                              {entries} {entries === 1 ? "entry" : "entries"}
+                              {item.change !== undefined &&
+                                ` · ${item.change >= 0 ? "+" : "−"}${money(Math.abs(item.change))}`}
+                            </span>
                             <strong>{money(item.cumulativeAmount)}</strong>
                           </div>
                         );
