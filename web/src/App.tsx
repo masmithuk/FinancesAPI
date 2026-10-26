@@ -215,20 +215,12 @@ function App() {
           ))}
         </nav>
         <div className="sidebar-bottom">
-          <div className="privacy-note">
-            <span className="privacy-icon">✳</span>
-            <div>
-              <strong>Your money, your way.</strong>
-              <span>Private by design</span>
-            </div>
-          </div>
           <Button variant="ghost" className="profile-button" onClick={signOut}>
             <span className="avatar">{userName.slice(0, 1).toUpperCase() || "N"}</span>
             <span className="profile-text">
               <strong>{userName || "Loading profile…"}</strong>
-              <small>Sign out</small>
+              <small>Click to sign out</small>
             </span>
-            <span className="profile-more">⋯</span>
           </Button>
         </div>
       </aside>

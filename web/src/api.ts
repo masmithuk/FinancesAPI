@@ -84,6 +84,29 @@ export interface SetupStatus {
   missing: string[];
 }
 
+export interface PaydayPlan {
+  paydayStartDate: string | null;
+  paydayWindowEndDate: string | null;
+  nextPaydayDate: string | null;
+  scheduledIncome: number;
+  scheduledExpenses: number;
+  discretionaryIncome: number;
+  accounts: Array<{
+    accountId: string;
+    accountName: string;
+    expensesDue: number;
+    unfundedShortfall: number;
+    receivesPaydayIncome: boolean;
+  }>;
+  transfers: Array<{
+    fromAccountId: string;
+    fromAccountName: string;
+    toAccountId: string;
+    toAccountName: string;
+    amount: number;
+  }>;
+}
+
 export interface Forecast {
   from: string;
   to: string;
@@ -229,6 +252,7 @@ export const api = {
     post<Occurrence>(`/api/accounts/${accountId}/occurrences/${occurrenceId}/reconcile`, token, {}),
   overview: (token: string) => request<FinancialOverview>("/api/financialoverview", token),
   setup: (token: string) => request<SetupStatus>("/api/setup", token),
+  paydayPlan: (token: string) => request<PaydayPlan>("/api/payday-plan", token),
   forecast: (token: string, accountId: string) =>
     request<Forecast>(`/api/accounts/${accountId}/forecast`, token),
 };

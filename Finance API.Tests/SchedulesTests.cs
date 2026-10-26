@@ -45,6 +45,8 @@ public sealed class SchedulesTests
         var schedRent = new { Name = "Rent", Amount = 1000.00m, StartDate = DateTime.UtcNow.Date, Frequency = 1, IsIncome = false };
         var schedRentResp = await client.PostAsJsonAsync($"/api/accounts/{accountId}/schedules", schedRent);
         Assert.Equal(HttpStatusCode.Created, schedRentResp.StatusCode);
+        var createdExpense = await schedRentResp.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.False(createdExpense.GetProperty("isIncome").GetBoolean());
 
         // List schedules
         var listResp = await client.GetAsync($"/api/accounts/{accountId}/schedules");
@@ -54,6 +56,11 @@ public sealed class SchedulesTests
         Assert.Contains("Rent", listJson);
 
         using var schedulesDocument = JsonDocument.Parse(listJson);
+        Assert.False(schedulesDocument.RootElement
+            .EnumerateArray()
+            .Single(item => item.GetProperty("name").GetString() == "Rent")
+            .GetProperty("isIncome")
+            .GetBoolean());
         var salaryId = schedulesDocument.RootElement
             .EnumerateArray()
             .Single(item => item.GetProperty("name").GetString() == "Salary")

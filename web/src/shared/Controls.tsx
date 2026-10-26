@@ -107,7 +107,7 @@ export function ToggleField({
   const id = useId();
 
   return (
-    <div className="flex items-center gap-2">
+    <label className="flex w-fit cursor-pointer items-center gap-2">
       <input
         id={id}
         type="checkbox"
@@ -118,9 +118,9 @@ export function ToggleField({
       />
       <span
         aria-hidden="true"
-        className="relative inline-flex h-[18px] w-8 shrink-0 cursor-pointer rounded-full bg-input transition-colors before:absolute before:top-px before:left-px before:size-4 before:rounded-full before:bg-background before:transition-transform before:content-[''] peer-checked:bg-primary peer-checked:before:translate-x-[13px] peer-focus-visible:ring-3 peer-focus-visible:ring-ring/50"
+        className="relative inline-flex h-[18px] w-8 shrink-0 rounded-full bg-input transition-colors before:absolute before:top-px before:left-px before:size-4 before:rounded-full before:bg-background before:transition-transform before:content-[''] peer-checked:bg-primary peer-checked:before:translate-x-[13px] peer-focus-visible:ring-3 peer-focus-visible:ring-ring/50"
       />
-      <Label htmlFor={id}>{label}</Label>
-    </div>
+      <span className="text-sm font-medium">{label}</span>
+    </label>
   );
 }

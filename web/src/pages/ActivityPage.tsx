@@ -42,7 +42,7 @@ export default function ActivityPage({ token }: { token: string }) {
   const [scheduleAmount, setScheduleAmount] = useState("");
   const [scheduleDate, setScheduleDate] = useState(today());
   const [frequency, setFrequency] = useState(2);
-  const [scheduleIncome, setScheduleIncome] = useState(true);
+  const [scheduleIncome, setScheduleIncome] = useState(false);
 
   const loadActivity = useCallback(
     async (id: string) => {

@@ -21,6 +21,13 @@ public static class FinancialOverviewEndpoints
             .WithName("GetSetup")
             .WithTags("FinancialOverview");
 
+        endpoints.MapGet("/api/payday-plan", GetPaydayPlanAsync)
+            .RequireAuthorization()
+            .WithName("GetPaydayPlan")
+            .WithTags("FinancialOverview")
+            .WithSummary("Get the upcoming payday funding plan")
+            .WithDescription("Infers payday windows from recurring income schedules and recommends transfers for upcoming expense shortfalls.");
+
         return endpoints;
     }
 
@@ -42,5 +49,18 @@ public static class FinancialOverviewEndpoints
 
         var status = await financialOverview.GetSetupStatusAsync(ownerId);
         return Results.Ok(status);
+    }
+
+    private static async Task<IResult> GetPaydayPlanAsync(
+        Finance_API.Services.IPaydayPlanService paydayPlan,
+        ClaimsPrincipal user,
+        Finance_API.Services.IUserContextService userContext,
+        CancellationToken cancellationToken)
+    {
+        var ownerId = userContext.GetUserId(user);
+        if (string.IsNullOrEmpty(ownerId)) return Results.Unauthorized();
+
+        var plan = await paydayPlan.GetPlanAsync(ownerId, cancellationToken);
+        return Results.Ok(plan);
     }
 }

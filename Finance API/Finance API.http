@@ -207,6 +207,11 @@ GET {{Finance_API_HostAddress_Https}}/api/financialoverview
 Authorization: Bearer {{token}}
 Accept: application/json
 
+### Payday transfer plan inferred from recurring income and expenses
+GET {{Finance_API_HostAddress_Https}}/api/payday-plan
+Authorization: {{token}}
+Accept: application/json
+
 ### Setup status
 GET {{Finance_API_HostAddress_Https}}/api/setup
 Authorization: Bearer {{token}}

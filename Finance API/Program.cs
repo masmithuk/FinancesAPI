@@ -103,6 +103,7 @@ builder.Services.AddAuthorization();
 // Register forecast service
 builder.Services.AddScoped<Finance_API.Services.ForecastService>();
 builder.Services.AddScoped<Finance_API.Services.FinancialOverviewService>();
+builder.Services.AddScoped<Finance_API.Services.IPaydayPlanService, Finance_API.Services.PaydayPlanService>();
 // user context helper
 builder.Services.AddSingleton<Finance_API.Services.IUserContextService, Finance_API.Services.UserContextService>();
 
