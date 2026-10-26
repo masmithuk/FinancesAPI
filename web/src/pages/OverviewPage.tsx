@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ApiError, api, type FinancialOverview, type PaydayPlan, type SetupStatus } from "../api";
 import { dateLabel, money } from "../shared/format";
+import { buildShareSummary, whatsAppShareUrl } from "../lib/shareSummary";
 import { Button } from "../shared/Controls";
 import { EmptyState, ErrorMessage, MetricCard, PageHeading, Panel } from "../shared/Ui";
 import type { Page } from "../types";
@@ -85,9 +86,28 @@ export default function OverviewPage({
         title="Your payday plan."
         subtitle="See what needs moving, where it needs to go, and what’s left."
         action={
-          <Button variant="outline" onClick={() => onNavigate("activity")}>
-            Adjust income & expenses
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            {paydayPlan?.paydayStartDate && (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  const text = buildShareSummary({
+                    income: paydayPlan.scheduledIncome,
+                    expenditure: paydayPlan.scheduledExpenses,
+                    discretionaryIncome: paydayPlan.discretionaryIncome,
+                    leftToSpend: paydayPlan.leftToSpend,
+                    paydayLabel: dateLabel(paydayPlan.paydayStartDate!),
+                  });
+                  window.open(whatsAppShareUrl(text), "_blank", "noopener,noreferrer");
+                }}
+              >
+                Share on WhatsApp
+              </Button>
+            )}
+            <Button variant="outline" onClick={() => onNavigate("activity")}>
+              Adjust income & expenses
+            </Button>
+          </div>
         }
       />
       <ErrorMessage message={error} />
