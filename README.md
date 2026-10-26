@@ -30,11 +30,10 @@ Recommended transfers are informational only. Users make transfers outside the a
 - Bank connections, transaction imports, or transaction categorisation.
 - Shared household logins, foreign currencies, and foreign-exchange conversion.
 - Automatic bank transfers or automatic interest calculations.
-- A finance user interface; this repository covers the API.
 
 ## API implementation status
 
-The active development project is an ASP.NET Core Minimal API targeting .NET 10. Its foundation includes EF Core with SQLite, startup-applied migrations, minimal API request validation, RFC 7807 Problem Details, a readiness endpoint, and development-only OpenAPI. Finance domain endpoints and authentication are still to be implemented.
+The active development project is an ASP.NET Core Minimal API targeting .NET 10. Its foundation includes EF Core with SQLite, startup-applied migrations, minimal API request validation, RFC 7807 Problem Details, a readiness endpoint, development-only OpenAPI, JWT authentication, and finance endpoints.
 
 Implemented in this update: basic scheduling endpoints and persistence for recurring income/expenses (issue #5). These provide create/list operations for per-account schedules; occurrence generation and reconciliation are tracked in subsequent issues.
 
@@ -59,12 +58,12 @@ Implemented in this update: Home summary, setup status, and transfer recommendat
 
 Notes on Home summary (V1):
 - Setup status endpoint (/api/setup) returns a checklist of missing items to finish initial setup (accounts, balances, pots when goals exist).
-- Home summary endpoint (/api/home) returns per-account current balances, identified pot shortfalls, a SafeToSpend figure (from the forecast), and simple transfer recommendations.
+- Financial overview endpoint (/api/financialoverview) returns per-account available funds, identified pot shortfalls, a SafeToSpend figure (from the forecast), and simple transfer recommendations.
 - Transfer recommendations are informational only and use a greedy algorithm to suggest moving funds from accounts with available balances to cover pot shortfalls.
 
 Usage:
 - GET /api/setup — returns setup checklist
-- GET /api/home  — returns home summary with recommendations
+- GET /api/financialoverview — returns home summary with recommendations
 
 These endpoints are protected and require authentication.
 - Run migrations locally with the dotnet-ef CLI (see the "Run the API" section). Tests use an in-memory SQLite provider and the SkipMigrations setting.
@@ -74,8 +73,20 @@ The repository also retains the earlier API implementation in `FinancesAPI/`. Th
 ### Run the API
 
 ```powershell
-dotnet run --project "Finance API\Finance API.csproj"
+dotnet run --project "Finance API\Finance API.csproj" --launch-profile http
 ```
+
+### Run the web client
+
+The Vite+ React client is in [`web/`](web/README.md). Start the API using its HTTP profile, then run the client from the repository root:
+
+```powershell
+cd web
+npm install
+npm run dev
+```
+
+The development server proxies `/api` requests to `http://localhost:5106`. The UI supports login/registration, the financial overview, and create, edit, move, and delete workflows for one-off activity and recurring plans. Editing or deleting a reconciled occurrence adds balance corrections so account totals remain accurate.
 
 The API applies pending EF Core migrations at startup and stores its local SQLite database at `Finance API/App_Data/finance-api.db`. Override the connection string with the `ConnectionStrings__Finance` environment variable. The local `dotnet-ef` tool is pinned in `dotnet-tools.json`; add future migrations from the repository root with:
 

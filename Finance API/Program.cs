@@ -19,6 +19,11 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddOpenApi();
 builder.Services.AddValidation();
 builder.Services.AddProblemDetails();
+builder.Services.AddCors(options =>
+    options.AddPolicy("LocalVite", policy =>
+        policy.WithOrigins("http://localhost:5173")
+            .AllowAnyHeader()
+            .AllowAnyMethod()));
 
 // Read the named connection string from configuration (appsettings.json, env vars, etc.)
 var connectionString = builder.Configuration.GetConnectionString("Finance")
@@ -107,7 +112,14 @@ var app = builder.Build();
 // Global error handling and status pages
 app.UseExceptionHandler();
 app.UseStatusCodePages();
-app.UseHttpsRedirection();
+if (app.Environment.IsDevelopment())
+{
+    app.UseCors("LocalVite");
+}
+else
+{
+    app.UseHttpsRedirection();
+}
 
 // Only map OpenAPI/Swagger in development to avoid exposing docs in production
 if (app.Environment.IsDevelopment())

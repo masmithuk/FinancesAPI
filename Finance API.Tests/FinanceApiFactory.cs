@@ -51,6 +51,8 @@ internal sealed class FinanceApiFactory(SqliteConnection connection) : WebApplic
         // registered DbContextOptions so our registration takes precedence.
         builder.ConfigureServices(services =>
         {
+            services.Configure<Microsoft.AspNetCore.HttpsPolicy.HttpsRedirectionOptions>(
+                options => options.HttpsPort = 7056);
             services.RemoveAll<DbContextOptions<FinanceDbContext>>();
             services.AddDbContext<FinanceDbContext>(options =>
                 options.UseSqlite(connection));

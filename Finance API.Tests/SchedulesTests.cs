@@ -9,7 +9,7 @@ namespace Finance_API.Tests;
 public sealed class SchedulesTests
 {
     [Fact]
-    public async Task CreateAndListSchedules()
+    public async Task CreateListEditMoveAndDeleteSchedule()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
         await connection.OpenAsync();
@@ -52,5 +52,55 @@ public sealed class SchedulesTests
         var listJson = await listResp.Content.ReadAsStringAsync();
         Assert.Contains("Salary", listJson);
         Assert.Contains("Rent", listJson);
+
+        using var schedulesDocument = JsonDocument.Parse(listJson);
+        var salaryId = schedulesDocument.RootElement
+            .EnumerateArray()
+            .Single(item => item.GetProperty("name").GetString() == "Salary")
+            .GetProperty("id")
+            .GetGuid();
+
+        var secondAccountResponse = await client.PostAsJsonAsync(
+            "/api/accounts",
+            new { Name = "Savings" });
+        Assert.Equal(HttpStatusCode.Created, secondAccountResponse.StatusCode);
+        var secondAccount = await secondAccountResponse.Content.ReadFromJsonAsync<JsonElement>();
+        var secondAccountId = secondAccount.GetProperty("id").GetGuid();
+
+        var updateResponse = await client.PutAsJsonAsync(
+            $"/api/accounts/{accountId}/schedules/{salaryId}",
+            new
+            {
+                accountId = secondAccountId,
+                name = "New salary",
+                amount = 2500m,
+                startDate = "2026-11-01",
+                frequency = 1,
+                isIncome = false
+            });
+        Assert.Equal(HttpStatusCode.OK, updateResponse.StatusCode);
+        var updatedSchedule = await updateResponse.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("New salary", updatedSchedule.GetProperty("name").GetString());
+        Assert.Equal(2500m, updatedSchedule.GetProperty("amount").GetDecimal());
+        Assert.StartsWith(
+            "2026-11-01",
+            updatedSchedule.GetProperty("startDate").GetString(),
+            StringComparison.Ordinal);
+        Assert.Equal(1, updatedSchedule.GetProperty("frequency").GetInt32());
+        Assert.False(updatedSchedule.GetProperty("isIncome").GetBoolean());
+
+        var oldAccountSchedules = await client.GetFromJsonAsync<JsonElement>(
+            $"/api/accounts/{accountId}/schedules");
+        Assert.DoesNotContain(
+            oldAccountSchedules.EnumerateArray(),
+            item => item.GetProperty("id").GetGuid() == salaryId);
+
+        var deleteResponse = await client.DeleteAsync(
+            $"/api/accounts/{secondAccountId}/schedules/{salaryId}");
+        Assert.Equal(HttpStatusCode.NoContent, deleteResponse.StatusCode);
+
+        var remainingSchedules = await client.GetFromJsonAsync<JsonElement>(
+            $"/api/accounts/{secondAccountId}/schedules");
+        Assert.Empty(remainingSchedules.EnumerateArray());
     }
 }

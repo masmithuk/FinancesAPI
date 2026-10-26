@@ -2,7 +2,9 @@
 @Finance_API_HostAddress_Https = https://localhost:7056
 @token = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIyYjBmYTVlYy05MzliLTRhZWEtODlmOC0yNWExZjAwYmFiMmQiLCJ1bmlxdWVfbmFtZSI6ImFsaWNlIiwiaHR0cDovL3NjaGVtYXMueG1sc29hcC5vcmcvd3MvMjAwNS8wNS9pZGVudGl0eS9jbGFpbXMvbmFtZWlkZW50aWZpZXIiOiIyYjBmYTVlYy05MzliLTRhZWEtODlmOC0yNWExZjAwYmFiMmQiLCJleHAiOjE3OTI0NDA5MDcsImlzcyI6IkZpbmFuY2VBcGlEZXYiLCJhdWQiOiJGaW5hbmNlQXBpQ2xpZW50cyJ9.MvngHJwjNgTXi691Wt0BaMuXhTf0zc-9tp0P2n1TI0Q
 @accountId = 24fa30b2-9a67-4a70-9b34-a1e4d915a81d
+@targetAccountId = 48fa30b2-9a67-4a70-9b34-a1e4d915a81d
 @potId = 49b7c59e-8bf4-4498-9107-7b4626f219a8
+@scheduleId = b8b18a44-0fd0-47cf-a0c4-5c4d5e92eb83
 @occurrenceId = a590d356-b6f9-461a-b0b4-6b4db260ef40
 
 ### General
@@ -135,6 +137,24 @@ GET {{Finance_API_HostAddress_Https}}/api/accounts/{{accountId}}/schedules
 Authorization: Bearer {{token}}
 Accept: application/json
 
+### Update and move a recurring schedule
+PUT {{Finance_API_HostAddress_Https}}/api/accounts/{{accountId}}/schedules/{{scheduleId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "accountId": "{{targetAccountId}}",
+  "name": "Updated salary",
+  "amount": 2500.00,
+  "startDate": "2026-11-01",
+  "frequency": 2,
+  "isIncome": true
+}
+
+### Delete a recurring schedule
+DELETE {{Finance_API_HostAddress_Https}}/api/accounts/{{accountId}}/schedules/{{scheduleId}}
+Authorization: Bearer {{token}}
+
 ### Occurrences
 ### Create an occurrence (record actual income/expense)
 POST {{Finance_API_HostAddress_Https}}/api/accounts/{{accountId}}/occurrences
@@ -153,6 +173,23 @@ Content-Type: application/json
 GET {{Finance_API_HostAddress_Https}}/api/accounts/{{accountId}}/occurrences
 Authorization: Bearer {{token}}
 Accept: application/json
+
+### Update and move a recorded occurrence
+PUT {{Finance_API_HostAddress_Https}}/api/accounts/{{accountId}}/occurrences/{{occurrenceId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "accountId": "{{targetAccountId}}",
+  "date": "2026-10-15",
+  "amount": 125.00,
+  "isIncome": false,
+  "externalReference": "Updated description"
+}
+
+### Delete a recorded occurrence
+DELETE {{Finance_API_HostAddress_Https}}/api/accounts/{{accountId}}/occurrences/{{occurrenceId}}
+Authorization: Bearer {{token}}
 
 ### Reconcile an occurrence (apply to balances once)
 POST {{Finance_API_HostAddress_Https}}/api/accounts/{{accountId}}/occurrences/{{occurrenceId}}/reconcile

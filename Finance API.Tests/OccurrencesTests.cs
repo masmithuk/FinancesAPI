@@ -9,7 +9,7 @@ namespace Finance_API.Tests;
 public sealed class OccurrencesTests
 {
     [Fact]
-    public async Task Create_List_And_Reconcile_Occurrence()
+    public async Task CreateReconcileEditMoveAndDeleteOccurrence()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
         await connection.OpenAsync();
@@ -61,5 +61,58 @@ public sealed class OccurrencesTests
         var balancesJson = await balances.Content.ReadAsStringAsync();
         // Expense of 100 becomes -100 when applied to balance
         Assert.Contains("-100", balancesJson);
+
+        var secondAccountResponse = await client.PostAsJsonAsync(
+            "/api/accounts",
+            new { Name = "Savings" });
+        Assert.Equal(HttpStatusCode.Created, secondAccountResponse.StatusCode);
+        var secondAccount = await secondAccountResponse.Content.ReadFromJsonAsync<JsonElement>();
+        var secondAccountId = secondAccount.GetProperty("id").GetGuid();
+
+        var updateResponse = await client.PutAsJsonAsync(
+            $"/api/accounts/{accountId}/occurrences/{occId}",
+            new
+            {
+                accountId = secondAccountId,
+                date = "2026-10-15",
+                amount = 250m,
+                isIncome = true,
+                externalReference = "updated-income"
+            });
+        Assert.Equal(HttpStatusCode.OK, updateResponse.StatusCode);
+        var updatedOccurrence = await updateResponse.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("updated-income", updatedOccurrence.GetProperty("externalReference").GetString());
+        Assert.StartsWith(
+            "2026-10-15",
+            updatedOccurrence.GetProperty("date").GetString(),
+            StringComparison.Ordinal);
+        Assert.Equal(250m, updatedOccurrence.GetProperty("amount").GetDecimal());
+        Assert.True(updatedOccurrence.GetProperty("isIncome").GetBoolean());
+        Assert.True(updatedOccurrence.GetProperty("isReconciled").GetBoolean());
+
+        var correctedOldBalances = await client.GetFromJsonAsync<JsonElement>(
+            $"/api/accounts/{accountId}/balances");
+        Assert.Equal(
+            0m,
+            correctedOldBalances.EnumerateArray()
+                .Sum(balance => balance.GetProperty("amount").GetDecimal()));
+
+        var newAccountBalances = await client.GetFromJsonAsync<JsonElement>(
+            $"/api/accounts/{secondAccountId}/balances");
+        Assert.Equal(
+            250m,
+            newAccountBalances.EnumerateArray()
+                .Sum(balance => balance.GetProperty("amount").GetDecimal()));
+
+        var deleteResponse = await client.DeleteAsync(
+            $"/api/accounts/{secondAccountId}/occurrences/{occId}");
+        Assert.Equal(HttpStatusCode.NoContent, deleteResponse.StatusCode);
+
+        var deletedAccountBalances = await client.GetFromJsonAsync<JsonElement>(
+            $"/api/accounts/{secondAccountId}/balances");
+        Assert.Equal(
+            0m,
+            deletedAccountBalances.EnumerateArray()
+                .Sum(balance => balance.GetProperty("amount").GetDecimal()));
     }
 }

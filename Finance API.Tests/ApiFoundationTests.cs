@@ -1,8 +1,10 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Finance_API.Endpoints;
 using Finance_API.Persistence;
+using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -92,6 +94,87 @@ public sealed class ApiFoundationTests
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
         Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
         Assert.Contains("\"status\":404", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task LocalViteRequestsPreserveAuthentication()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        using var factory = new FinanceApiFactory(connection);
+        using var client = factory.CreateClient();
+        using var noRedirectClient = factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            AllowAutoRedirect = false
+        });
+
+        using var request = new HttpRequestMessage(HttpMethod.Options, "/api/auth/register");
+        request.Headers.Add("Origin", "http://localhost:5173");
+        request.Headers.Add("Access-Control-Request-Method", "POST");
+        request.Headers.Add("Access-Control-Request-Headers", "content-type");
+
+        using var response = await noRedirectClient.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.Equal(
+            "http://localhost:5173",
+            Assert.Single(response.Headers.GetValues("Access-Control-Allow-Origin")));
+        Assert.Contains(
+            "POST",
+            Assert.Single(response.Headers.GetValues("Access-Control-Allow-Methods")),
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(
+            "content-type",
+            Assert.Single(response.Headers.GetValues("Access-Control-Allow-Headers")),
+            StringComparison.OrdinalIgnoreCase);
+
+        var registerResponse = await client.PostAsJsonAsync(
+            "/api/auth/register",
+            new
+            {
+                userName = "cors-user",
+                email = "cors@example.com",
+                password = "P@ssword1"
+            });
+
+        Assert.Equal(HttpStatusCode.Created, registerResponse.StatusCode);
+
+        var loginResponse = await client.PostAsJsonAsync(
+            "/api/auth/login",
+            new { userName = "cors-user", password = "P@ssword1" });
+        Assert.Equal(HttpStatusCode.OK, loginResponse.StatusCode);
+        var authentication = await loginResponse.Content.ReadFromJsonAsync<JsonElement>();
+        var token = authentication.GetProperty("token").GetString()
+            ?? throw new InvalidOperationException("Login response did not include a token.");
+
+        using var authenticatedProfileRequest = new HttpRequestMessage(HttpMethod.Get, "/api/me");
+        authenticatedProfileRequest.Headers.Add("Origin", "http://localhost:5173");
+        authenticatedProfileRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        using var authenticatedProfileResponse = await noRedirectClient.SendAsync(authenticatedProfileRequest);
+
+        Assert.Equal(HttpStatusCode.OK, authenticatedProfileResponse.StatusCode);
+        Assert.Equal(
+            "http://localhost:5173",
+            Assert.Single(authenticatedProfileResponse.Headers.GetValues("Access-Control-Allow-Origin")));
+
+        using var registerRequest = new HttpRequestMessage(HttpMethod.Post, "/api/auth/register")
+        {
+            Content = JsonContent.Create(new
+            {
+                userName = "cors-user-2",
+                email = "cors2@example.com",
+                password = "P@ssword1"
+            })
+        };
+        registerRequest.Headers.Add("Origin", "http://localhost:5173");
+
+        using var localViteRegisterResponse = await noRedirectClient.SendAsync(registerRequest);
+
+        Assert.Equal(HttpStatusCode.Created, localViteRegisterResponse.StatusCode);
+        Assert.Equal(
+            "http://localhost:5173",
+            Assert.Single(localViteRegisterResponse.Headers.GetValues("Access-Control-Allow-Origin")));
     }
 
     /// <summary>
