@@ -61,6 +61,20 @@ export default function OverviewPage({
     ]).finally(() => setLoading(false));
   }, [token]);
 
+  const discretionarySuggestions = (() => {
+    let remaining = Math.max(0, paydayPlan?.discretionaryIncome ?? 0);
+    const result: Array<{ potId: string; potName: string; shortfall: number; amount: number }> =
+      [];
+    for (const pot of summary?.potShortfalls ?? []) {
+      if (remaining < 0.01) break;
+      const amount = Math.min(remaining, pot.shortfall);
+      if (amount < 0.01) continue;
+      result.push({ potId: pot.potId, potName: pot.potName, shortfall: pot.shortfall, amount });
+      remaining -= amount;
+    }
+    return result;
+  })();
+
   return (
     <>
       <PageHeading
@@ -148,11 +162,11 @@ export default function OverviewPage({
                   </div>
                 )}
                 <div className="grid gap-2">
-                  <h3 className="text-sm font-semibold">Expenditure and amount left to pay</h3>
+                  <h3 className="text-sm font-semibold">Expenses by account, and what remains from today until payday</h3>
                   <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-4 border-b pb-2 text-xs text-muted-foreground">
                     <span>Account</span>
                     <span>Total expenditure</span>
-                    <span>Left to pay</span>
+                    <span>Remaining after today</span>
                   </div>
                   {paydayPlan.accounts.map((account) => (
                     <div
@@ -192,6 +206,18 @@ export default function OverviewPage({
                 {paydayPlan ? money(paydayPlan.discretionaryIncome) : "—"}
               </strong>
               <p>Total income less expenses due in this pay period.</p>
+              {discretionarySuggestions.length > 0 && (
+                <div className="grid gap-1 text-sm">
+                  <strong>Suggested use of your discretionary income</strong>
+                  {discretionarySuggestions.map((item) => (
+                    <span key={item.potId}>
+                      {money(item.amount)} to cover pot ‘{item.potName}’
+                      {item.amount < item.shortfall &&
+                        ` (${money(item.shortfall - item.amount)} still to go)`}
+                    </span>
+                  ))}
+                </div>
+              )}
               <Button variant="link" className="hero-link" onClick={() => onNavigate("activity")}>
                 Explore your cash flow <span>→</span>
               </Button>
@@ -249,6 +275,7 @@ export default function OverviewPage({
                 />
               )}
             </Panel>
+            {!(setup?.hasAccount && setup.hasBalance && setup.hasPotIfGoals) && (
             <Panel title="A good place to begin" subtitle="Your setup, at a glance">
               {setup && (
                 <div className="checklist">
@@ -280,32 +307,8 @@ export default function OverviewPage({
                 </div>
               )}
             </Panel>
+            )}
           </section>
-          {!!summary?.recommendations.length && (
-            <Panel
-              title="Gentle nudges"
-              subtitle="Informational suggestions based on your current plan"
-            >
-              <div className="recommendations">
-                {summary.recommendations.map((item, index) => (
-                  <div className="recommendation" key={`${item.toPotId}-${index}`}>
-                    <span className="recommendation-icon">✳</span>
-                    <div>
-                      <strong>{item.explanation}</strong>
-                      <small>Suggested amount · {money(item.amount)}</small>
-                    </div>
-                    <Button
-                      variant="link"
-                      className="subtle-link"
-                      onClick={() => onNavigate("pots")}
-                    >
-                      View pot →
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            </Panel>
-          )}
         </>
       )}
     </>

@@ -139,19 +139,42 @@ async function request<T>(path: string, token?: string, init: RequestInit = {}):
   if (init.body) headers.set("Content-Type", "application/json");
   if (token) headers.set("Authorization", `Bearer ${token}`);
 
-  const response = await fetch(path, { ...init, headers });
-  const text = await response.text();
+  let response: Response;
+  try {
+    response = await fetch(path, { ...init, headers });
+  } catch {
+    throw new ApiError(
+      "We can't reach the server right now. Check your connection and try again shortly.",
+      0,
+    );
+  }
+
+  let text: string;
+  try {
+    text = await response.text();
+  } catch {
+    throw new ApiError("The connection was interrupted. Please try again.", 0);
+  }
+
   let payload: unknown;
   if (text) {
     try {
       payload = JSON.parse(text);
-    } catch (error) {
-      if (response.ok) throw error;
-      payload = text;
+    } catch {
+      if (response.ok) throw new ApiError("The server sent an unexpected response.", response.status);
     }
   }
 
   if (!response.ok) {
+    if (response.status >= 500) {
+      throw new ApiError(
+        response.status === 502 || response.status === 503 || response.status === 504
+          ? "The service is temporarily unavailable. Please try again shortly."
+          : "Something went wrong on our side. Please try again.",
+        response.status,
+      );
+    }
+
     const details =
       typeof payload === "object" && payload !== null ? (payload as Record<string, unknown>) : {};
     const errors = Array.isArray(details.errors)
@@ -161,8 +184,6 @@ async function request<T>(path: string, token?: string, init: RequestInit = {}):
       errors.join(" ") ||
       (typeof details.detail === "string" ? details.detail : undefined) ||
       (typeof details.title === "string" ? details.title : undefined) ||
-      (typeof payload === "string" ? payload : undefined) ||
-      response.statusText ||
       "The request could not be completed.";
     throw new ApiError(message, response.status);
   }

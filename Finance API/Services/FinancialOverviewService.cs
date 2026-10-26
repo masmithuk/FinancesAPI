@@ -88,19 +88,18 @@ public sealed class FinancialOverviewService
 
         // Compute pot shortfalls: goal.TargetAmount - current pot balances (approximate by account available for now)
         var potShortfalls = new List<PotShortfall>();
-        var pots = await _db.Pots.Include(p => p.Goals).Include(p => p.Account).Where(p => p.Account != null && p.Account.OwnerId == ownerId).ToListAsync();
+        var pots = await _db.Pots.Include(p => p.Goals).Include(p => p.Contributions).Include(p => p.Account).Where(p => p.Account != null && p.Account.OwnerId == ownerId).ToListAsync();
 
         // Build a mapping from pot id to its account id for enrichment of recommendations
         var potToAccount = pots.ToDictionary(pp => pp.Id, pp => pp.AccountId);
 
         foreach (var p in pots)
         {
-            var goal = await _db.Goals.Where(g => g.PotId == p.Id).FirstOrDefaultAsync();
+            var goal = p.Goals.FirstOrDefault();
             if (goal is not null)
             {
-                // Estimate pot current amount by using the associated account's available funds
-                var accountBal = accountSummaries.FirstOrDefault(a => a.AccountId == p.AccountId)?.AvailableForSpending ?? 0m;
-                var shortfall = Math.Max(0, goal.TargetAmount - accountBal);
+                var saved = p.Contributions.Sum(c => c.Amount);
+                var shortfall = Math.Max(0, goal.TargetAmount - saved);
                 if (shortfall > 0) potShortfalls.Add(new PotShortfall(p.Id, p.Name, shortfall));
             }
         }

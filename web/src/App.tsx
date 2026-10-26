@@ -138,11 +138,30 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: (token: string) => v
   );
 }
 
+const pages: Page[] = ["overview", "accounts", "pots", "activity"];
+
+function pageFromHash(): Page {
+  const value = window.location.hash.replace(/^#\/?/, "");
+  return pages.find((item) => item === value) ?? "overview";
+}
+
 function App() {
   const [token, setToken] = useState(() => localStorage.getItem("northstar-token"));
   const [userName, setUserName] = useState("");
-  const [page, setPage] = useState<Page>("overview");
+  const [page, setPageState] = useState<Page>(pageFromHash);
   const [authError, setAuthError] = useState("");
+
+  useEffect(() => {
+    const onHashChange = () => setPageState(pageFromHash());
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
+
+  // Each page gets its own history entry so the browser Back button stays in the app.
+  const setPage = useCallback((next: Page) => {
+    if (window.location.hash !== `#/${next}`) window.location.hash = `/${next}`;
+    setPageState(next);
+  }, []);
 
   useEffect(() => {
     if (!token) return;
