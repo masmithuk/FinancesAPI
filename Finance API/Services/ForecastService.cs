@@ -47,12 +47,21 @@ public sealed class ForecastService
 
         // Gather scheduled item occurrences within the range
         var schedules = await _db.ScheduledItems.Where(s => s.AccountId == accountId).ToListAsync();
+        // Plan occurrences already paid by a linked activity must not be counted again.
+        var linkedOccurrences = (await _db.Occurrences
+            .Where(o => o.AccountId == accountId && o.ScheduledItemId != null)
+            .Select(o => new { o.ScheduledItemId, o.Date, o.PlanDate })
+            .ToListAsync())
+            .Select(o => (o.ScheduledItemId, Date: (o.PlanDate ?? o.Date).Date))
+            .ToHashSet();
+
         var scheduleEvents = new List<(DateTime Date, decimal Amount)>();
         foreach (var s in schedules)
         {
             var occurrences = ExpandSchedule(s, today, end);
             foreach (var d in occurrences)
             {
+                if (linkedOccurrences.Contains((s.Id, d.Date))) continue;
                 var amt = s.IsIncome ? s.Amount : -s.Amount;
                 scheduleEvents.Add((d, amt));
             }

@@ -52,6 +52,9 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options)
         builder.Entity<Occurrence>()
             .HasIndex(o => new { o.AccountId, o.Date, o.Amount, o.IsIncome });
 
+        builder.Entity<Occurrence>()
+            .HasIndex(o => new { o.AccountId, o.ImportId });
+
         builder.Entity<Account>()
             .HasMany(a => a.Occurrences)
             .WithOne(o => o.Account)

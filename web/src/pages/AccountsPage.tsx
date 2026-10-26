@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { ApiError, api, type Account, type Balance, type Forecast } from "../api";
 import NameCreateForm from "../NameCreateForm";
 import { Card } from "@/components/ui/card";
 import { Button, TextField } from "../shared/Controls";
 import { dateLabel, money, today } from "../shared/format";
 import { EmptyState, ErrorMessage, PageHeading, Panel } from "../shared/Ui";
+
+const PAGE_SIZE = 25;
 
 export default function AccountsPage({ token }: { token: string }) {
   type BalanceEdit = { id: string; date: string; amount: string; note: string };
@@ -21,7 +23,30 @@ export default function AccountsPage({ token }: { token: string }) {
   const [balanceHistoryError, setBalanceHistoryError] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [balanceTotal, setBalanceTotal] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const loadedCount = useRef(0);
 
+  // Re-fetches everything already shown (the API serves at most 100 rows a request).
+  const fetchHistory = useCallback(
+    async (accountId: string, count: number) => {
+      const items: Balance[] = [];
+      let total = 0;
+      while (items.length < count) {
+        const page = await api.balanceHistory(
+          token,
+          accountId,
+          items.length,
+          Math.min(100, count - items.length),
+        );
+        total = page.total;
+        items.push(...page.items);
+        if (page.items.length === 0 || items.length >= total) break;
+      }
+      return { items, total };
+    },
+    [token],
+  );
   const loadAccounts = useCallback(async () => {
     const result = await api.accounts(token);
     setAccounts(result);
@@ -31,19 +56,37 @@ export default function AccountsPage({ token }: { token: string }) {
   }, [token]);
 
   const loadBalances = useCallback(
-    async (accountId: string) => {
+    async (accountId: string, keepLoaded = false) => {
       if (!accountId) return;
-      const [balanceList, runningList, accountForecast] = await Promise.all([
-        api.balances(token, accountId),
+      const [history, runningList, accountForecast] = await Promise.all([
+        fetchHistory(accountId, keepLoaded ? Math.max(PAGE_SIZE, loadedCount.current) : PAGE_SIZE),
         api.runningBalances(token, accountId),
         api.forecast(token, accountId),
       ]);
-      setBalances(balanceList);
+      loadedCount.current = history.items.length;
+      setBalances(history.items);
+      setBalanceTotal(history.total);
       setRunning(runningList);
       setForecast(accountForecast);
     },
-    [token],
+    [token, fetchHistory],
   );
+
+  async function showMoreBalances() {
+    if (!selectedId) return;
+    setLoadingMore(true);
+    setBalanceHistoryError("");
+    try {
+      const page = await api.balanceHistory(token, selectedId, balances.length, PAGE_SIZE);
+      loadedCount.current = balances.length + page.items.length;
+      setBalances((current) => [...current, ...page.items]);
+      setBalanceTotal(page.total);
+    } catch (reason) {
+      setBalanceHistoryError(balanceErrorMessage(reason, "load"));
+    } finally {
+      setLoadingMore(false);
+    }
+  }
 
   useEffect(() => {
     loadAccounts()
@@ -81,7 +124,7 @@ export default function AccountsPage({ token }: { token: string }) {
       await api.createBalance(token, selectedId, balanceDate, Number(amount), note);
       setAmount("");
       setNote("");
-      await loadBalances(selectedId);
+      await loadBalances(selectedId, true);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to add balance.");
     }
@@ -107,7 +150,7 @@ export default function AccountsPage({ token }: { token: string }) {
     }
 
     try {
-      await loadBalances(selectedId);
+      await loadBalances(selectedId, true);
     } catch (reason) {
       setBalanceHistoryError(
         `Balance updated, but the history could not be refreshed. ${balanceErrorMessage(reason, "load")}`,
@@ -127,7 +170,7 @@ export default function AccountsPage({ token }: { token: string }) {
     }
 
     try {
-      await loadBalances(selectedId);
+      await loadBalances(selectedId, true);
     } catch (reason) {
       setBalanceHistoryError(
         `Balance deleted, but the history could not be refreshed. ${balanceErrorMessage(reason, "load")}`,
@@ -207,7 +250,7 @@ export default function AccountsPage({ token }: { token: string }) {
                 <div className="detail-card-bottom">
                   <span>Latest recorded total</span>
                   <span>
-                    {balances.length} balance {balances.length === 1 ? "entry" : "entries"}
+                    {balanceTotal} balance {balanceTotal === 1 ? "entry" : "entries"}
                   </span>
                 </div>
               </Card>
@@ -347,6 +390,18 @@ export default function AccountsPage({ token }: { token: string }) {
                         )}
                       </div>
                     ))}
+                    {balances.length < balanceTotal && (
+                      <Button
+                        variant="outline"
+                        type="button"
+                        disabled={loadingMore}
+                        onClick={showMoreBalances}
+                      >
+                        {loadingMore
+                          ? "Loading…"
+                          : `Load more (${balanceTotal - balances.length} remaining)`}
+                      </Button>
+                    )}
                   </div>
                 ) : (
                   <EmptyState

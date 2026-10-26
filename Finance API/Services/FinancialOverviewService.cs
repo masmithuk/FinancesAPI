@@ -75,7 +75,16 @@ public sealed class FinancialOverviewService
                 .Where(s => s.AccountId == a.Id && s.StartDate.Date >= today && s.StartDate.Date <= futureWindowEnd)
                 .ToListAsync();
 
-            var scheduledSum = scheduled.Sum(s => s.IsIncome ? s.Amount : -s.Amount);
+            var linkedKeys = (await _db.Occurrences
+                .Where(o => o.AccountId == a.Id && o.ScheduledItemId != null)
+                .Select(o => new { o.ScheduledItemId, o.Date, o.PlanDate })
+                .ToListAsync())
+                .Select(o => (o.ScheduledItemId, Date: (o.PlanDate ?? o.Date).Date))
+                .ToHashSet();
+
+            var scheduledSum = scheduled
+                .Where(s => !linkedKeys.Contains((s.Id, s.StartDate.Date)))
+                .Sum(s => s.IsIncome ? s.Amount : -s.Amount);
 
             // Include pending (unreconciled) occurrences in the window
             var pendingSum = await _db.Occurrences

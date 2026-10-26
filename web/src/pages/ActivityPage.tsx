@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { claimKey, nearestPlanDate } from "../lib/planMatch";
 import {
   api,
   type Account,
@@ -11,6 +12,9 @@ import { Card } from "@/components/ui/card";
 import { Button, SelectField, TextField, ToggleField } from "../shared/Controls";
 import { dateLabel, money, today } from "../shared/format";
 import { EmptyState, ErrorMessage, PageHeading, Panel } from "../shared/Ui";
+import StatementImport from "../shared/StatementImport";
+
+const PAGE_SIZE = 25;
 
 type ScheduleEdit = Omit<ScheduleUpdate, "amount"> & {
   id: string;
@@ -32,6 +36,10 @@ export default function ActivityPage({ token }: { token: string }) {
   const [editingOccurrence, setEditingOccurrence] = useState<OccurrenceEdit | null>(null);
   const [editingSchedule, setEditingSchedule] = useState<ScheduleEdit | null>(null);
   const [error, setError] = useState("");
+  const [occurrenceTotal, setOccurrenceTotal] = useState(0);
+  const [claimedPlanDates, setClaimedPlanDates] = useState<Set<string>>(new Set());
+  const [loadingMore, setLoadingMore] = useState(false);
+  const loadedCount = useRef(0);
   const [loading, setLoading] = useState(true);
 
   const [occurrenceDate, setOccurrenceDate] = useState(today());
@@ -45,21 +53,58 @@ export default function ActivityPage({ token }: { token: string }) {
   const [scheduleIncome, setScheduleIncome] = useState(false);
 
   const loadActivity = useCallback(
-    async (id: string) => {
+    async (id: string, keepLoaded = false) => {
       if (!id) {
         setOccurrences([]);
+        setOccurrenceTotal(0);
         setSchedules([]);
+        setClaimedPlanDates(new Set());
         return;
       }
-      const [items, plans] = await Promise.all([
-        api.occurrences(token, id),
+      // Re-fetch as many rows as were already shown (the API serves at most 100 a request).
+      const wanted = keepLoaded ? Math.max(PAGE_SIZE, loadedCount.current) : PAGE_SIZE;
+      const items: Occurrence[] = [];
+      let total = 0;
+      while (items.length < wanted) {
+        const page = await api.occurrencePage(
+          token,
+          id,
+          items.length,
+          Math.min(100, wanted - items.length),
+        );
+        total = page.total;
+        items.push(...page.items);
+        if (page.items.length === 0 || items.length >= total) break;
+      }
+      const [plans, links] = await Promise.all([
         api.schedules(token, id),
+        api.occurrencePlanLinks(token, id),
       ]);
+      loadedCount.current = items.length;
       setOccurrences(items);
+      setOccurrenceTotal(total);
       setSchedules(plans);
+      setClaimedPlanDates(
+        new Set(links.map((link) => claimKey(link.scheduledItemId, link.planDate))),
+      );
     },
     [token],
   );
+
+  async function showMoreOccurrences() {
+    setLoadingMore(true);
+    setError("");
+    try {
+      const page = await api.occurrencePage(token, accountId, occurrences.length, PAGE_SIZE);
+      loadedCount.current = occurrences.length + page.items.length;
+      setOccurrences((current) => [...current, ...page.items]);
+      setOccurrenceTotal(page.total);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to load more activity.");
+    } finally {
+      setLoadingMore(false);
+    }
+  }
 
   useEffect(() => {
     api
@@ -80,6 +125,20 @@ export default function ActivityPage({ token }: { token: string }) {
     );
   }, [accountId, loadActivity]);
 
+  async function linkOccurrence(item: Occurrence, planId: string | null) {
+    setError("");
+    try {
+      const plan = planId ? schedules.find((entry) => entry.id === planId) : undefined;
+      await api.linkOccurrencePlan(token, accountId, item.id, {
+        scheduledItemId: plan?.id ?? null,
+        planDate: plan ? nearestPlanDate(plan, item.date) : null,
+      });
+      await loadActivity(accountId, true);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to update the plan link.");
+    }
+  }
+
   async function createOccurrence(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
@@ -93,7 +152,7 @@ export default function ActivityPage({ token }: { token: string }) {
       });
       setOccurrenceAmount("");
       setExternalReference("");
-      await loadActivity(accountId);
+      await loadActivity(accountId, true);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to record activity.");
     }
@@ -112,7 +171,7 @@ export default function ActivityPage({ token }: { token: string }) {
       });
       setScheduleName("");
       setScheduleAmount("");
-      await loadActivity(accountId);
+      await loadActivity(accountId, true);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to create schedule.");
     }
@@ -131,7 +190,7 @@ export default function ActivityPage({ token }: { token: string }) {
         externalReference: (editingOccurrence.externalReference ?? "").trim() || null,
       });
       setEditingOccurrence(null);
-      await loadActivity(accountId);
+      await loadActivity(accountId, true);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to update activity.");
     }
@@ -146,7 +205,7 @@ export default function ActivityPage({ token }: { token: string }) {
     try {
       await api.deleteOccurrence(token, accountId, item.id);
       setEditingOccurrence(null);
-      await loadActivity(accountId);
+      await loadActivity(accountId, true);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to delete activity.");
     }
@@ -166,7 +225,7 @@ export default function ActivityPage({ token }: { token: string }) {
         isIncome: editingSchedule.isIncome,
       });
       setEditingSchedule(null);
-      await loadActivity(accountId);
+      await loadActivity(accountId, true);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to update recurring plan.");
     }
@@ -178,7 +237,7 @@ export default function ActivityPage({ token }: { token: string }) {
     try {
       await api.deleteSchedule(token, accountId, item.id);
       setEditingSchedule(null);
-      await loadActivity(accountId);
+      await loadActivity(accountId, true);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to delete recurring plan.");
     }
@@ -303,6 +362,13 @@ export default function ActivityPage({ token }: { token: string }) {
               </form>
             </Panel>
           </section>
+          <StatementImport
+            token={token}
+            accountId={accountId}
+            plans={schedules}
+            claimed={claimedPlanDates}
+            onImported={() => loadActivity(accountId)}
+          />
           <section className="content-grid activity-lists">
             <Panel
               title="Recent activity"
@@ -387,15 +453,48 @@ export default function ActivityPage({ token }: { token: string }) {
                         </span>
                         <div className="activity-description">
                           <strong>
-                            {item.externalReference || (item.isIncome ? "Income" : "Expense")}
+                            {item.description ||
+                              item.externalReference ||
+                              (item.isIncome ? "Income" : "Expense")}
                           </strong>
                           <small>
                             {dateLabel(item.date)} · {item.isReconciled ? "Applied" : "Scheduled"}
-                            </small>
+                          </small>
+                          <small className="activity-plan-link">
+                            {(item.scheduledItemId ||
+                              schedules.some((plan) => plan.isIncome === item.isIncome)) && (
+                              <label>
+                                Plan:{" "}
+                                <select
+                                  aria-label={`Plan paid by ${item.description || "this activity"}`}
+                                  value={item.scheduledItemId ?? ""}
+                                  onChange={(event) =>
+                                    linkOccurrence(item, event.target.value || null)
+                                  }
+                                >
+                                  <option value="">Not linked to a plan</option>
+                                  {schedules
+                                    .filter(
+                                      (plan) =>
+                                        plan.isIncome === item.isIncome ||
+                                        plan.id === item.scheduledItemId,
+                                    )
+                                    .map((plan) => (
+                                      <option key={plan.id} value={plan.id}>
+                                        {plan.name}
+                                      </option>
+                                    ))}
+                                </select>
+                                {item.scheduledItemId && item.planDate
+                                  ? ` · pays the ${dateLabel(item.planDate)} occurrence`
+                                  : ""}
+                              </label>
+                            )}
+                          </small>
                         </div>
                         <strong className={item.isIncome ? "amount-positive" : ""}>
-                            {item.isIncome ? "+" : "−"}
-                            {money(item.amount)}
+                          {item.isIncome ? "+" : "−"}
+                          {money(item.amount)}
                         </strong>
                         <div className="activity-row-actions">
                           <Button
@@ -426,6 +525,18 @@ export default function ActivityPage({ token }: { token: string }) {
                         </div>
                       </div>
                     ),
+                  )}
+                  {occurrences.length < occurrenceTotal && (
+                    <Button
+                      variant="outline"
+                      type="button"
+                      disabled={loadingMore}
+                      onClick={showMoreOccurrences}
+                    >
+                      {loadingMore
+                        ? "Loading…"
+                        : `Load more (${occurrenceTotal - occurrences.length} remaining)`}
+                    </Button>
                   )}
                 </div>
               ) : (

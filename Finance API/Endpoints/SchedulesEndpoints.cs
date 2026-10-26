@@ -170,6 +170,14 @@ public static class SchedulesEndpoints
             cancellationToken);
         if (schedule is null) return Results.NotFound();
 
+        // Keep linked activity, but detach it from the deleted plan.
+        var linked = await db.Occurrences.Where(o => o.ScheduledItemId == id).ToListAsync(cancellationToken);
+        foreach (var occurrence in linked)
+        {
+            occurrence.ScheduledItemId = null;
+            occurrence.PlanDate = null;
+        }
+
         db.ScheduledItems.Remove(schedule);
         await db.SaveChangesAsync(cancellationToken);
         return Results.NoContent();

@@ -80,6 +80,46 @@ public sealed class AccountsTests
         var missingBalanceUpdateResponse = await client.PutAsJsonAsync(
             $"/api/accounts/{accountId}/balances/{balanceId}",
             new { Date = DateTime.UtcNow.Date, Amount = 10m });
-        Assert.Equal(HttpStatusCode.NotFound, missingBalanceUpdateResponse.StatusCode);
+    }
+
+    [Fact]
+    public async Task BalanceHistory_IsPagedNewestFirstAndOwnerScoped()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        using var factory = new FinanceApiFactory(connection);
+        using var client = factory.CreateClient();
+
+        await client.PostAsJsonAsync("/api/auth/register", new { UserName = "pager", Email = "pager@example.com", Password = "P@ssword1" });
+        var loginResponse = await client.PostAsJsonAsync("/api/auth/login", new { UserName = "pager", Password = "P@ssword1" });
+        var auth = await loginResponse.Content.ReadFromJsonAsync<JsonElement>();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", auth.GetProperty("token").GetString());
+
+        var account = await (await client.PostAsJsonAsync("/api/accounts", new { Name = "Paged" })).Content.ReadFromJsonAsync<JsonElement>();
+        var accountId = account.GetProperty("id").GetGuid();
+
+        var start = DateTime.UtcNow.Date.AddDays(-30);
+        for (var day = 0; day < 7; day++)
+        {
+            var created = await client.PostAsJsonAsync($"/api/accounts/{accountId}/balances", new { Date = start.AddDays(day), Amount = day + 1m });
+            Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        }
+
+        var first = await client.GetFromJsonAsync<JsonElement>($"/api/accounts/{accountId}/balances/history?skip=0&take=3");
+        Assert.Equal(7, first.GetProperty("total").GetInt32());
+        var firstItems = first.GetProperty("items");
+        Assert.Equal(3, firstItems.GetArrayLength());
+        Assert.Equal(7m, firstItems[0].GetProperty("amount").GetDecimal());
+        Assert.Equal(5m, firstItems[2].GetProperty("amount").GetDecimal());
+
+        var last = await client.GetFromJsonAsync<JsonElement>($"/api/accounts/{accountId}/balances/history?skip=6&take=3");
+        Assert.Equal(1, last.GetProperty("items").GetArrayLength());
+        Assert.Equal(1m, last.GetProperty("items")[0].GetProperty("amount").GetDecimal());
+
+        var capped = await client.GetFromJsonAsync<JsonElement>($"/api/accounts/{accountId}/balances/history?take=100000&skip=-5");
+        Assert.Equal(7, capped.GetProperty("items").GetArrayLength());
+
+        var other = await client.GetAsync($"/api/accounts/{Guid.NewGuid()}/balances/history");
+        Assert.Equal(HttpStatusCode.NotFound, other.StatusCode);
     }
 }

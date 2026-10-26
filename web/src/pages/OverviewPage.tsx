@@ -63,8 +63,7 @@ export default function OverviewPage({
 
   const discretionarySuggestions = (() => {
     let remaining = Math.max(0, paydayPlan?.discretionaryIncome ?? 0);
-    const result: Array<{ potId: string; potName: string; shortfall: number; amount: number }> =
-      [];
+    const result: Array<{ potId: string; potName: string; shortfall: number; amount: number }> = [];
     for (const pot of summary?.potShortfalls ?? []) {
       if (remaining < 0.01) break;
       const amount = Math.min(remaining, pot.shortfall);
@@ -162,7 +161,9 @@ export default function OverviewPage({
                   </div>
                 )}
                 <div className="grid gap-2">
-                  <h3 className="text-sm font-semibold">Expenses by account, and what remains from today until payday</h3>
+                  <h3 className="text-sm font-semibold">
+                    Expenses by account, and what remains from today until payday
+                  </h3>
                   <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-4 border-b pb-2 text-xs text-muted-foreground">
                     <span>Account</span>
                     <span>Total expenditure</span>
@@ -211,9 +212,8 @@ export default function OverviewPage({
                   <strong>Suggested use of your discretionary income</strong>
                   {discretionarySuggestions.map((item) => (
                     <span key={item.potId}>
-                      {money(item.amount)} to cover pot ‘{item.potName}’
-                      {item.amount < item.shortfall &&
-                        ` (${money(item.shortfall - item.amount)} still to go)`}
+                      {money(item.amount)} to cover pot ‘{item.potName}’ ({money(item.shortfall)}{" "}
+                      still to go)
                     </span>
                   ))}
                 </div>
@@ -276,37 +276,37 @@ export default function OverviewPage({
               )}
             </Panel>
             {!(setup?.hasAccount && setup.hasBalance && setup.hasPotIfGoals) && (
-            <Panel title="A good place to begin" subtitle="Your setup, at a glance">
-              {setup && (
-                <div className="checklist">
-                  {[
-                    { label: "Create your first account", done: setup.hasAccount },
-                    { label: "Add an account balance", done: setup.hasBalance },
-                    { label: "Set up your pots and goals", done: setup.hasPotIfGoals },
-                  ].map((item) => (
-                    <div className="checklist-row" key={item.label}>
-                      <span className={`check-dot ${item.done ? "done" : ""}`}>
-                        {item.done ? "✓" : "·"}
-                      </span>
-                      <span>{item.label}</span>
-                      <span className={`check-status ${item.done ? "done" : ""}`}>
-                        {item.done ? "Done" : "To do"}
-                      </span>
-                    </div>
-                  ))}
-                  {!setup.hasAccount && (
-                    <Button variant="outline" size="small" onClick={() => onNavigate("accounts")}>
-                      Add your first account
-                    </Button>
-                  )}
-                  {setup.hasAccount && !setup.hasBalance && (
-                    <Button variant="outline" size="small" onClick={() => onNavigate("accounts")}>
-                      Add a balance
-                    </Button>
-                  )}
-                </div>
-              )}
-            </Panel>
+              <Panel title="A good place to begin" subtitle="Your setup, at a glance">
+                {setup && (
+                  <div className="checklist">
+                    {[
+                      { label: "Create your first account", done: setup.hasAccount },
+                      { label: "Add an account balance", done: setup.hasBalance },
+                      { label: "Set up your pots and goals", done: setup.hasPotIfGoals },
+                    ].map((item) => (
+                      <div className="checklist-row" key={item.label}>
+                        <span className={`check-dot ${item.done ? "done" : ""}`}>
+                          {item.done ? "✓" : "·"}
+                        </span>
+                        <span>{item.label}</span>
+                        <span className={`check-status ${item.done ? "done" : ""}`}>
+                          {item.done ? "Done" : "To do"}
+                        </span>
+                      </div>
+                    ))}
+                    {!setup.hasAccount && (
+                      <Button variant="outline" size="small" onClick={() => onNavigate("accounts")}>
+                        Add your first account
+                      </Button>
+                    )}
+                    {setup.hasAccount && !setup.hasBalance && (
+                      <Button variant="outline" size="small" onClick={() => onNavigate("accounts")}>
+                        Add a balance
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </Panel>
             )}
           </section>
         </>

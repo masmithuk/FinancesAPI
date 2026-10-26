@@ -163,7 +163,15 @@ namespace Finance_API.Persistence.Migrations
                     b.Property<DateTime>("Date")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("Description")
+                        .HasMaxLength(250)
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("ExternalReference")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ImportId")
+                        .HasMaxLength(100)
                         .HasColumnType("TEXT");
 
                     b.Property<bool>("IsIncome")
@@ -171,6 +179,9 @@ namespace Finance_API.Persistence.Migrations
 
                     b.Property<bool>("IsReconciled")
                         .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("PlanDate")
+                        .HasColumnType("TEXT");
 
                     b.Property<Guid?>("ScheduledItemId")
                         .HasColumnType("TEXT");
@@ -181,6 +192,8 @@ namespace Finance_API.Persistence.Migrations
                         .IsUnique();
 
                     b.HasIndex("ScheduledItemId");
+
+                    b.HasIndex("AccountId", "ImportId");
 
                     b.HasIndex("AccountId", "Date", "Amount", "IsIncome");
 

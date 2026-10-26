@@ -261,7 +261,7 @@ public sealed class PaydayPlanService(FinanceDbContext db) : IPaydayPlanService
             {
                 if (occurrences.Any(occurrence =>
                         occurrence.ScheduledItemId == schedule.Id &&
-                        occurrence.Date.Date == date))
+                        (occurrence.PlanDate ?? occurrence.Date).Date == date))
                 {
                     continue;
                 }

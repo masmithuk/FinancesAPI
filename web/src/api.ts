@@ -10,6 +10,11 @@ export interface Balance {
   note?: string | null;
 }
 
+export interface BalanceHistoryPage {
+  items: Balance[];
+  total: number;
+}
+
 export interface Pot {
   id: string;
   name: string;
@@ -55,6 +60,20 @@ export interface Occurrence {
   isIncome: boolean;
   isReconciled: boolean;
   externalReference: string | null;
+  description?: string | null;
+  scheduledItemId?: string | null;
+  planDate?: string | null;
+}
+
+export interface OccurrencePage {
+  items: Occurrence[];
+  total: number;
+}
+
+export interface ImportResult {
+  imported: number;
+  duplicates: number;
+  skipped: number;
 }
 
 export interface OccurrenceUpdate {
@@ -162,7 +181,8 @@ async function request<T>(path: string, token?: string, init: RequestInit = {}):
     try {
       payload = JSON.parse(text);
     } catch {
-      if (response.ok) throw new ApiError("The server sent an unexpected response.", response.status);
+      if (response.ok)
+        throw new ApiError("The server sent an unexpected response.", response.status);
     }
   }
 
@@ -216,18 +236,17 @@ export const api = {
   createAccount: (token: string, name: string) => post<Account>("/api/accounts", token, { name }),
   balances: (token: string, accountId: string) =>
     request<Balance[]>(`/api/accounts/${accountId}/balances`, token),
+  balanceHistory: (token: string, accountId: string, skip: number, take: number) =>
+    request<BalanceHistoryPage>(
+      `/api/accounts/${accountId}/balances/history?skip=${skip}&take=${take}`,
+      token,
+    ),
   runningBalances: (token: string, accountId: string) =>
     request<Array<{ date: string; cumulativeAmount: number }>>(
       `/api/accounts/${accountId}/running-balances`,
       token,
     ),
-  createBalance: (
-    token: string,
-    accountId: string,
-    date: string,
-    amount: number,
-    note?: string,
-  ) =>
+  createBalance: (token: string, accountId: string, date: string, amount: number, note?: string) =>
     post<Balance>(`/api/accounts/${accountId}/balances`, token, {
       date,
       amount,
@@ -328,6 +347,16 @@ export const api = {
     }),
   occurrences: (token: string, accountId: string) =>
     request<Occurrence[]>(`/api/accounts/${accountId}/occurrences`, token),
+  occurrencePage: (token: string, accountId: string, skip: number, take: number) =>
+    request<OccurrencePage>(
+      `/api/accounts/${accountId}/occurrences/page?skip=${skip}&take=${take}`,
+      token,
+    ),
+  occurrencePlanLinks: (token: string, accountId: string) =>
+    request<Array<{ scheduledItemId: string; planDate: string }>>(
+      `/api/accounts/${accountId}/occurrences/plan-links`,
+      token,
+    ),
   createOccurrence: (
     token: string,
     accountId: string,
@@ -348,6 +377,28 @@ export const api = {
     request<Occurrence>(`/api/accounts/${accountId}/occurrences/${occurrenceId}`, token, {
       method: "PUT",
       body: JSON.stringify(occurrence),
+    }),
+  importOccurrences: (
+    token: string,
+    accountId: string,
+    rows: Array<{
+      date: string;
+      amount: number;
+      name: string;
+      importId: string;
+      scheduledItemId?: string | null;
+      planDate?: string | null;
+    }>,
+  ) => post<ImportResult>(`/api/accounts/${accountId}/occurrences/import`, token, { rows }),
+  linkOccurrencePlan: (
+    token: string,
+    accountId: string,
+    occurrenceId: string,
+    link: { scheduledItemId: string | null; planDate?: string | null },
+  ) =>
+    request<Occurrence>(`/api/accounts/${accountId}/occurrences/${occurrenceId}/plan`, token, {
+      method: "PUT",
+      body: JSON.stringify(link),
     }),
   deleteOccurrence: (token: string, accountId: string, occurrenceId: string) =>
     request<void>(`/api/accounts/${accountId}/occurrences/${occurrenceId}`, token, {

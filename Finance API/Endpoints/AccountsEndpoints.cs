@@ -47,6 +47,13 @@ public static class AccountsEndpoints
             .WithName("ListBalances")
             .WithTags("Accounts");
 
+        // Paged balance history, newest first, so large accounts don't load every row at once.
+        endpoints.MapGet("/api/accounts/{id}/balances/history", ListBalanceHistoryAsync)
+            .RequireAuthorization()
+            .WithName("ListBalanceHistory")
+            .WithTags("Accounts")
+            .WithSummary("List balance entries a page at a time (skip/take), newest first");
+
         endpoints.MapPut("/api/accounts/{id}/balances/{balanceId}", UpdateBalanceAsync)
             .RequireAuthorization()
             .WithName("UpdateBalance")
@@ -179,6 +186,37 @@ public static class AccountsEndpoints
             .ToListAsync();
 
         return Results.Ok(balances);
+    }
+
+    private const int DefaultHistoryPageSize = 25;
+    private const int MaxHistoryPageSize = 100;
+
+    /// <summary>A page of balance entries plus the total number of entries for the account.</summary>
+    public sealed record BalanceHistoryPage(List<BalanceResponse> Items, int Total);
+
+    /// <summary>
+    /// Lists one page of balances (newest first). <c>take</c> defaults to 25 and is capped at 100.
+    /// </summary>
+    private static async Task<IResult> ListBalanceHistoryAsync(Guid id, int? skip, int? take, FinanceDbContext db, ClaimsPrincipal user, Finance_API.Services.IUserContextService userContext, CancellationToken cancellationToken)
+    {
+        var ownerId = userContext.GetUserId(user);
+        var account = await db.Accounts.FindAsync([id], cancellationToken);
+        if (account is null || account.OwnerId != ownerId) return Results.NotFound();
+
+        var offset = Math.Max(0, skip ?? 0);
+        var size = Math.Clamp(take ?? DefaultHistoryPageSize, 1, MaxHistoryPageSize);
+
+        var query = db.Balances.Where(b => b.AccountId == id);
+        var total = await query.CountAsync(cancellationToken);
+        var items = await query
+            .OrderByDescending(b => b.Date)
+            .ThenByDescending(b => b.Id)
+            .Skip(offset)
+            .Take(size)
+            .Select(b => new BalanceResponse(b.Id, b.Date, b.Amount, b.Note))
+            .ToListAsync(cancellationToken);
+
+        return Results.Ok(new BalanceHistoryPage(items, total));
     }
 
     /// <summary>

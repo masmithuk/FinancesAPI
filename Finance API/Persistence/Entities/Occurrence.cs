@@ -24,6 +24,12 @@ public sealed class Occurrence
     /// </summary>
     public Guid? ScheduledItemId { get; set; }
 
+    /// <summary>
+    /// The date of the plan occurrence this activity pays. It can differ from <see cref="Date"/>
+    /// when a bank transaction lands a few days away from the planned date.
+    /// </summary>
+    public DateTime? PlanDate { get; set; }
+
     [Required]
     public DateTime Date { get; set; }
 
@@ -40,6 +46,18 @@ public sealed class Occurrence
     /// </summary>
     public string? ExternalReference { get; set; }
 
+    /// <summary>
+    /// Stable key of a row imported from a bank statement, unique per account,
+    /// so re-importing an overlapping statement does not create duplicates.
+    /// </summary>
+    [MaxLength(100)]
+    public string? ImportId { get; set; }
+
+    /// <summary>
+    /// Display label for the activity, e.g. the merchant name from an imported statement.
+    /// </summary>
+    [MaxLength(250)]
+    public string? Description { get; set; }
     /// <summary>
     /// When true the occurrence has been reconciled against account balances
     /// and should not be applied again.

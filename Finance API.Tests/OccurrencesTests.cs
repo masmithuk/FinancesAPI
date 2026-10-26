@@ -115,4 +115,154 @@ public sealed class OccurrencesTests
             deletedAccountBalances.EnumerateArray()
                 .Sum(balance => balance.GetProperty("amount").GetDecimal()));
     }
+
+    [Fact]
+    public async Task ImportOccurrences_IsIdempotentAndAppliesBalances()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        using var factory = new FinanceApiFactory(connection);
+        using var client = factory.CreateClient();
+
+        await client.PostAsJsonAsync("/api/auth/register", new { UserName = "importer", Email = "imp@example.com", Password = "P@ssword1" });
+        var loginResponse = await client.PostAsJsonAsync("/api/auth/login", new { UserName = "importer", Password = "P@ssword1" });
+        var auth = await loginResponse.Content.ReadFromJsonAsync<JsonElement>();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", auth.GetProperty("token").GetString());
+
+        var account = await (await client.PostAsJsonAsync("/api/accounts", new { Name = "Current" })).Content.ReadFromJsonAsync<JsonElement>();
+        var accountId = account.GetProperty("id").GetGuid();
+
+        var payload = new
+        {
+            rows = new object[]
+            {
+                new { date = "2026-09-25", amount = 1250.40m, name = "Alex Example", importId = "tx_1" },
+                new { date = "2026-09-25", amount = -41.37m, name = "Examplemart", importId = "tx_2" },
+                new { date = "2026-09-26", amount = -3.10m, name = "Coffee", importId = (string?)null },
+                new { date = "2026-09-26", amount = -3.10m, name = "Coffee", importId = (string?)null },
+                new { date = "2026-09-26", amount = 0m, name = "Zero", importId = "tx_zero" }
+            }
+        };
+
+        var first = await client.PostAsJsonAsync($"/api/accounts/{accountId}/occurrences/import", payload);
+        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+        var firstResult = await first.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(4, firstResult.GetProperty("imported").GetInt32());
+        Assert.Equal(1, firstResult.GetProperty("skipped").GetInt32());
+
+        var second = await client.PostAsJsonAsync($"/api/accounts/{accountId}/occurrences/import", payload);
+        var secondResult = await second.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(0, secondResult.GetProperty("imported").GetInt32());
+        Assert.Equal(4, secondResult.GetProperty("duplicates").GetInt32());
+
+        var running = await client.GetFromJsonAsync<JsonElement>($"/api/accounts/{accountId}/running-balances");
+        Assert.Equal(1250.40m - 41.37m - 3.10m - 3.10m, running[running.GetArrayLength() - 1].GetProperty("cumulativeAmount").GetDecimal());
+
+        var list = await client.GetFromJsonAsync<JsonElement>($"/api/accounts/{accountId}/occurrences");
+        Assert.Contains(list.EnumerateArray(), item => item.GetProperty("description").GetString() == "Examplemart");
+    }
+
+    [Fact]
+    public async Task LinkedImport_IsNotCountedTwiceAndCanBeUnlinked()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        using var factory = new FinanceApiFactory(connection);
+        using var client = factory.CreateClient();
+
+        await client.PostAsJsonAsync("/api/auth/register", new { UserName = "linker", Email = "link@example.com", Password = "P@ssword1" });
+        var loginResponse = await client.PostAsJsonAsync("/api/auth/login", new { UserName = "linker", Password = "P@ssword1" });
+        var auth = await loginResponse.Content.ReadFromJsonAsync<JsonElement>();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", auth.GetProperty("token").GetString());
+
+        var account = await (await client.PostAsJsonAsync("/api/accounts", new { Name = "Current" })).Content.ReadFromJsonAsync<JsonElement>();
+        var accountId = account.GetProperty("id").GetGuid();
+
+        var today = DateTime.UtcNow.Date;
+        var plan = await (await client.PostAsJsonAsync($"/api/accounts/{accountId}/schedules", new { Name = "Gym", Amount = 50m, StartDate = today, Frequency = 2, IsIncome = false })).Content.ReadFromJsonAsync<JsonElement>();
+        var planId = plan.GetProperty("id").GetGuid();
+
+        var unlinked = await client.GetFromJsonAsync<JsonElement>($"/api/accounts/{accountId}/forecast");
+        Assert.Equal(-50m, unlinked.GetProperty("safeToSpend").GetDecimal());
+
+        var import = await client.PostAsJsonAsync($"/api/accounts/{accountId}/occurrences/import", new
+        {
+            rows = new object[] { new { date = today.ToString("yyyy-MM-dd"), amount = -50m, name = "GYM LTD", importId = "tx_gym", scheduledItemId = planId, planDate = today.ToString("yyyy-MM-dd") } }
+        });
+        Assert.Equal(HttpStatusCode.OK, import.StatusCode);
+
+        // The imported payment replaces the plan occurrence rather than adding to it.
+        var linked = await client.GetFromJsonAsync<JsonElement>($"/api/accounts/{accountId}/forecast");
+        Assert.Equal(-50m, linked.GetProperty("safeToSpend").GetDecimal());
+
+        var list = await client.GetFromJsonAsync<JsonElement>($"/api/accounts/{accountId}/occurrences");
+        var item = list.EnumerateArray().Single();
+        Assert.Equal(planId, item.GetProperty("scheduledItemId").GetGuid());
+
+        var unlink = await client.PutAsJsonAsync($"/api/accounts/{accountId}/occurrences/{item.GetProperty("id").GetGuid()}/plan", new { scheduledItemId = (Guid?)null });
+        Assert.Equal(HttpStatusCode.OK, unlink.StatusCode);
+        var after = await client.GetFromJsonAsync<JsonElement>($"/api/accounts/{accountId}/forecast");
+        Assert.Equal(-100m, after.GetProperty("safeToSpend").GetDecimal());
+
+        var relink = await client.PutAsJsonAsync($"/api/accounts/{accountId}/occurrences/{item.GetProperty("id").GetGuid()}/plan", new { scheduledItemId = planId, planDate = today });
+        Assert.Equal(HttpStatusCode.OK, relink.StatusCode);
+
+        var unknown = await client.PutAsJsonAsync($"/api/accounts/{accountId}/occurrences/{item.GetProperty("id").GetGuid()}/plan", new { scheduledItemId = Guid.NewGuid() });
+        Assert.Equal(HttpStatusCode.NotFound, unknown.StatusCode);
+
+        var deletePlan = await client.DeleteAsync($"/api/accounts/{accountId}/schedules/{planId}");
+        Assert.Equal(HttpStatusCode.NoContent, deletePlan.StatusCode);
+        var remaining = await client.GetFromJsonAsync<JsonElement>($"/api/accounts/{accountId}/occurrences");
+        Assert.Equal(JsonValueKind.Null, remaining.EnumerateArray().Single().GetProperty("scheduledItemId").ValueKind);
+    }
+
+    [Fact]
+    public async Task OccurrencePage_IsPagedAndPlanLinksListPaidOccurrences()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        using var factory = new FinanceApiFactory(connection);
+        using var client = factory.CreateClient();
+
+        await client.PostAsJsonAsync("/api/auth/register", new { UserName = "pagerocc", Email = "pagerocc@example.com", Password = "P@ssword1" });
+        var loginResponse = await client.PostAsJsonAsync("/api/auth/login", new { UserName = "pagerocc", Password = "P@ssword1" });
+        var auth = await loginResponse.Content.ReadFromJsonAsync<JsonElement>();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", auth.GetProperty("token").GetString());
+
+        var account = await (await client.PostAsJsonAsync("/api/accounts", new { Name = "Current" })).Content.ReadFromJsonAsync<JsonElement>();
+        var accountId = account.GetProperty("id").GetGuid();
+        var today = DateTime.UtcNow.Date;
+        var plan = await (await client.PostAsJsonAsync($"/api/accounts/{accountId}/schedules", new { Name = "Gym", Amount = 50m, StartDate = today, Frequency = 2, IsIncome = false })).Content.ReadFromJsonAsync<JsonElement>();
+        var planId = plan.GetProperty("id").GetGuid();
+
+        var rows = Enumerable.Range(1, 7).Select(day => new
+        {
+            date = today.AddDays(-day).ToString("yyyy-MM-dd"),
+            amount = -(decimal)day,
+            name = $"Row {day}",
+            importId = $"tx_{day}",
+            scheduledItemId = day == 1 ? planId : (Guid?)null,
+            planDate = day == 1 ? today.ToString("yyyy-MM-dd") : null
+        }).ToArray();
+        var import = await client.PostAsJsonAsync($"/api/accounts/{accountId}/occurrences/import", new { rows });
+        Assert.Equal(HttpStatusCode.OK, import.StatusCode);
+
+        var first = await client.GetFromJsonAsync<JsonElement>($"/api/accounts/{accountId}/occurrences/page?skip=0&take=3");
+        Assert.Equal(7, first.GetProperty("total").GetInt32());
+        Assert.Equal(3, first.GetProperty("items").GetArrayLength());
+        Assert.Equal("Row 1", first.GetProperty("items")[0].GetProperty("description").GetString());
+
+        var last = await client.GetFromJsonAsync<JsonElement>($"/api/accounts/{accountId}/occurrences/page?skip=6&take=3");
+        Assert.Equal(1, last.GetProperty("items").GetArrayLength());
+
+        var capped = await client.GetFromJsonAsync<JsonElement>($"/api/accounts/{accountId}/occurrences/page?skip=-1&take=100000");
+        Assert.Equal(7, capped.GetProperty("items").GetArrayLength());
+
+        var links = await client.GetFromJsonAsync<JsonElement>($"/api/accounts/{accountId}/occurrences/plan-links");
+        Assert.Equal(1, links.GetArrayLength());
+        Assert.Equal(planId, links[0].GetProperty("scheduledItemId").GetGuid());
+
+        var other = await client.GetAsync($"/api/accounts/{Guid.NewGuid()}/occurrences/page");
+        Assert.Equal(HttpStatusCode.NotFound, other.StatusCode);
+    }
 }
