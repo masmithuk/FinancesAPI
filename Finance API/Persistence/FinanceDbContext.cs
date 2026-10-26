@@ -46,7 +46,7 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options)
 
         // Occurrences (actual recorded income/expense events)
         builder.Entity<Occurrence>()
-            .HasIndex(o => o.ExternalReference)
+            .HasIndex(o => new { o.AccountId, o.ExternalReference })
             .IsUnique();
 
         builder.Entity<Occurrence>()

@@ -100,11 +100,11 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: (token: string) => v
                 id="auth-password"
                 type="password"
                 autoComplete={registering ? "new-password" : "current-password"}
-                minLength={registering ? 6 : undefined}
+                minLength={registering ? 8 : undefined}
                 required
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
-                placeholder={registering ? "At least 6 characters" : "Your password"}
+                placeholder={registering ? "At least 8 characters, with a number" : "Your password"}
               />
             </div>
             {error && (

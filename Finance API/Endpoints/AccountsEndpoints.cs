@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using System.Security.Claims;
 using Finance_API.Persistence.Entities;
 using Finance_API.Persistence;
@@ -72,7 +73,7 @@ public static class AccountsEndpoints
     /// <summary>
     /// Payload to create a new account.
     /// </summary>
-    public sealed record CreateAccountRequest(string Name);
+    public sealed record CreateAccountRequest([Required, MaxLength(100)] string Name);
 
     /// <summary>
     /// Public representation of an account returned by the API.
@@ -82,12 +83,12 @@ public static class AccountsEndpoints
     /// <summary>
     /// Payload to add a dated balance to an account.
     /// </summary>
-    public sealed record AddBalanceRequest(DateTime Date, decimal Amount, string? Note = null);
+    public sealed record AddBalanceRequest(DateTime Date, [Range(typeof(decimal), "-999999999", "999999999")] decimal Amount, [MaxLength(1000)] string? Note = null);
 
     /// <summary>
     /// Payload to update a dated account balance.
     /// </summary>
-    public sealed record UpdateBalanceRequest(DateTime Date, decimal Amount, string? Note = null);
+    public sealed record UpdateBalanceRequest(DateTime Date, [Range(typeof(decimal), "-999999999", "999999999")] decimal Amount, [MaxLength(1000)] string? Note = null);
 
     /// <summary>
     /// Public representation of a balance returned by the API.

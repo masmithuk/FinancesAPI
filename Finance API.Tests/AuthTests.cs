@@ -19,6 +19,45 @@ namespace Finance_API.Tests;
 public sealed class AuthTests
 {
     [Fact]
+    public async Task Login_LocksOutAfterRepeatedFailures()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        using var factory = new FinanceApiFactory(connection);
+        using var client = factory.CreateClient();
+
+        await client.PostAsJsonAsync("/api/auth/register",
+            new { UserName = "lockuser", Email = "lock@example.com", Password = "P@ssword1" });
+
+        for (var i = 0; i < 5; i++)
+        {
+            var bad = await client.PostAsJsonAsync("/api/auth/login", new { UserName = "lockuser", Password = "wrong" });
+            Assert.Equal(HttpStatusCode.Unauthorized, bad.StatusCode);
+        }
+
+        var locked = await client.PostAsJsonAsync("/api/auth/login", new { UserName = "lockuser", Password = "P@ssword1" });
+        Assert.Equal(HttpStatusCode.Unauthorized, locked.StatusCode);
+    }
+
+    [Fact]
+    public async Task Login_IsRateLimited()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        using var factory = new FinanceApiFactory(connection);
+        using var client = factory.CreateClient();
+
+        HttpStatusCode last = default;
+        for (var i = 0; i < 15; i++)
+        {
+            var response = await client.PostAsJsonAsync("/api/auth/login", new { UserName = "nobody", Password = "wrong" });
+            last = response.StatusCode;
+        }
+
+        Assert.Equal(HttpStatusCode.TooManyRequests, last);
+    }
+
+    [Fact]
     public async Task Register_ReturnsCreated()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");

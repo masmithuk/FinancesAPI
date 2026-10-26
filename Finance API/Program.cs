@@ -5,8 +5,11 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
+using System.Threading.RateLimiting;
 
 // Create the application builder (minimal hosting model)
 var builder = WebApplication.CreateBuilder(args);
@@ -19,11 +22,26 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddOpenApi();
 builder.Services.AddValidation();
 builder.Services.AddProblemDetails();
+builder.Services.AddExceptionHandler<Finance_API.BadRequestExceptionHandler>();
 builder.Services.AddCors(options =>
     options.AddPolicy("LocalVite", policy =>
         policy.WithOrigins("http://localhost:5173")
             .AllowAnyHeader()
             .AllowAnyMethod()));
+
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy(AuthEndpoints.RateLimitPolicy, context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 10,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0
+            }));
+});
 
 // Read the named connection string from configuration (appsettings.json, env vars, etc.)
 var connectionString = builder.Configuration.GetConnectionString("Finance")
@@ -65,9 +83,12 @@ builder.Services.AddDbContext<FinanceDbContext>(options =>
 // FinanceDbContext. This registers user management services (UserManager, SignInManager, etc.)
 builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options =>
     {
-        options.Password.RequireDigit = false;
+        options.Password.RequireDigit = true;
         options.Password.RequireNonAlphanumeric = false;
-        options.Password.RequiredLength = 6;
+        options.Password.RequiredLength = 8;
+        options.Lockout.AllowedForNewUsers = true;
+        options.Lockout.MaxFailedAccessAttempts = 5;
+        options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
     })
     .AddEntityFrameworkStores<FinanceDbContext>()
     .AddDefaultTokenProviders();
@@ -77,6 +98,17 @@ var jwtKey = builder.Configuration["Jwt:Key"] ?? throw new InvalidOperationExcep
 var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "FinanceApi";
 var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "FinanceApiClients";
 var signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey));
+if (!builder.Environment.IsDevelopment()
+    && (Encoding.UTF8.GetByteCount(jwtKey) < 32 || jwtKey.Contains("REPLACE", StringComparison.OrdinalIgnoreCase)))
+{
+    throw new InvalidOperationException("Jwt:Key must be a unique secret of at least 32 characters outside Development.");
+}
+
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.AddServerHeader = false;
+    options.Limits.MaxRequestBodySize = 1_000_000;
+});
 
 builder.Services.AddAuthentication(options =>
     {
@@ -110,6 +142,22 @@ builder.Services.AddSingleton<Finance_API.Services.IUserContextService, Finance_
 // Build the WebApplication and configure middleware.
 var app = builder.Build();
 
+app.Use(async (context, next) =>
+{
+    var headers = context.Response.Headers;
+    headers["X-Content-Type-Options"] = "nosniff";
+    headers["X-Frame-Options"] = "DENY";
+    headers["Referrer-Policy"] = "no-referrer";
+    headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'";
+    headers["Cache-Control"] = "no-store";
+    await next();
+});
+
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHsts();
+}
+
 // Global error handling and status pages
 app.UseExceptionHandler();
 app.UseStatusCodePages();
@@ -121,6 +169,8 @@ else
 {
     app.UseHttpsRedirection();
 }
+
+app.UseRateLimiter();
 
 // Only map OpenAPI/Swagger in development to avoid exposing docs in production
 if (app.Environment.IsDevelopment())

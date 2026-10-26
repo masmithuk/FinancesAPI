@@ -9,6 +9,40 @@ namespace Finance_API.Tests;
 public sealed class OccurrencesTests
 {
     [Fact]
+    public async Task ExternalReference_IsScopedPerAccount_NoCrossUserLeak()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        using var factory = new FinanceApiFactory(connection);
+
+        async Task<(HttpClient Client, Guid AccountId)> SignUpAsync(string name)
+        {
+            var client = factory.CreateClient();
+            await client.PostAsJsonAsync("/api/auth/register", new { UserName = name, Email = $"{name}@example.com", Password = "P@ssword1" });
+            var login = await client.PostAsJsonAsync("/api/auth/login", new { UserName = name, Password = "P@ssword1" });
+            var auth = await login.Content.ReadFromJsonAsync<JsonElement>();
+            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", auth.GetProperty("token").GetString());
+            var account = await (await client.PostAsJsonAsync("/api/accounts", new { Name = "Main" })).Content.ReadFromJsonAsync<JsonElement>();
+            return (client, account.GetProperty("id").GetGuid());
+        }
+
+        var (alice, aliceAccount) = await SignUpAsync("alice");
+        var (bob, bobAccount) = await SignUpAsync("bob");
+
+        var aliceResp = await alice.PostAsJsonAsync($"/api/accounts/{aliceAccount}/occurrences",
+            new { Date = DateTime.UtcNow.Date, Amount = 123.45m, IsIncome = false, ScheduledItemId = (Guid?)null, ExternalReference = "shared-ref" });
+        Assert.Equal(HttpStatusCode.Created, aliceResp.StatusCode);
+        var aliceId = (await aliceResp.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
+
+        var bobResp = await bob.PostAsJsonAsync($"/api/accounts/{bobAccount}/occurrences",
+            new { Date = DateTime.UtcNow.Date, Amount = 5m, IsIncome = false, ScheduledItemId = (Guid?)null, ExternalReference = "shared-ref" });
+        Assert.Equal(HttpStatusCode.Created, bobResp.StatusCode);
+        var bobBody = await bobResp.Content.ReadAsStringAsync();
+        Assert.DoesNotContain(aliceId.ToString(), bobBody, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("123.45", bobBody, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task CreateReconcileEditMoveAndDeleteOccurrence()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");

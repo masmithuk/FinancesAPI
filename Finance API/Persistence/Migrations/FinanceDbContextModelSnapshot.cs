@@ -188,10 +188,10 @@ namespace Finance_API.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ExternalReference")
-                        .IsUnique();
-
                     b.HasIndex("ScheduledItemId");
+
+                    b.HasIndex("AccountId", "ExternalReference")
+                        .IsUnique();
 
                     b.HasIndex("AccountId", "ImportId");
 

@@ -44,7 +44,12 @@ public static class SchedulesEndpoints
         return endpoints;
     }
 
-    public sealed record CreateScheduleRequest(string Name, decimal Amount, DateTime StartDate, int Frequency, bool IsIncome);
+    public sealed record CreateScheduleRequest(
+        [Required, MaxLength(100)] string Name,
+        [Range(typeof(decimal), "0.01", "999999999")] decimal Amount,
+        DateTime StartDate,
+        [Range(0, 3)] int Frequency,
+        bool IsIncome);
     /// <summary>Fields for updating a recurring income or expense schedule.</summary>
     public sealed record UpdateScheduleRequest
     {

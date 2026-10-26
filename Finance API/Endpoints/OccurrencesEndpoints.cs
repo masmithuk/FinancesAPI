@@ -72,7 +72,12 @@ public static class OccurrencesEndpoints
         return endpoints;
     }
 
-    public sealed record CreateOccurrenceRequest(DateTime Date, decimal Amount, bool IsIncome, Guid? ScheduledItemId, string? ExternalReference);
+    public sealed record CreateOccurrenceRequest(
+        DateTime Date,
+        [Range(typeof(decimal), "0.01", "999999999")] decimal Amount,
+        bool IsIncome,
+        Guid? ScheduledItemId,
+        [MaxLength(100)] string? ExternalReference);
     /// <summary>Fields for updating a recorded income or expense.</summary>
     public sealed record UpdateOccurrenceRequest
     {
@@ -111,10 +116,14 @@ public static class OccurrencesEndpoints
         if (!string.IsNullOrEmpty(request.ExternalReference))
         {
             var existing = await db.Occurrences.FirstOrDefaultAsync(
-                o => o.ExternalReference == request.ExternalReference,
+                o => o.AccountId == accountId && o.ExternalReference == request.ExternalReference,
                 cancellationToken);
             if (existing is not null) return Results.Ok(new OccurrenceResponse(existing.Id, existing.Date, existing.Amount, existing.IsIncome, existing.IsReconciled, existing.ExternalReference));
         }
+
+        var scheduleAllowed = request.ScheduledItemId is not { } scheduleId
+            || await db.ScheduledItems.AnyAsync(s => s.Id == scheduleId && s.AccountId == accountId, cancellationToken);
+        if (!scheduleAllowed) return Results.NotFound();
 
         var occ = new Occurrence
         {
@@ -370,7 +379,9 @@ public static class OccurrencesEndpoints
 
         if (!string.IsNullOrEmpty(request.ExternalReference)
             && await db.Occurrences.AnyAsync(
-                item => item.ExternalReference == request.ExternalReference && item.Id != id,
+                item => item.AccountId == request.AccountId
+                    && item.ExternalReference == request.ExternalReference
+                    && item.Id != id,
                 cancellationToken))
         {
             return Results.Conflict(new { detail = "That description reference is already in use." });

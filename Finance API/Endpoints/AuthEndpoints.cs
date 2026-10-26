@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
@@ -16,6 +17,8 @@ namespace Finance_API.Endpoints;
 /// </summary>
 public static class AuthEndpoints
 {
+    public const string RateLimitPolicy = "auth";
+
     /// <summary>
     /// Registers the auth endpoints on the given <see cref="IEndpointRouteBuilder"/>.
     /// Call this from Program.cs to expose /api/auth/register and /api/auth/login.
@@ -25,12 +28,14 @@ public static class AuthEndpoints
         endpoints.MapPost("/api/auth/register", RegisterAsync)
             .WithName("RegisterUser")
             .WithTags("Auth")
-            .WithSummary("Register a new user account");
+            .WithSummary("Register a new user account")
+            .RequireRateLimiting(RateLimitPolicy);
 
         endpoints.MapPost("/api/auth/login", LoginAsync)
             .WithName("Login")
             .WithTags("Auth")
-            .WithSummary("Obtain a JWT access token using username and password");
+            .WithSummary("Obtain a JWT access token using username and password")
+            .RequireRateLimiting(RateLimitPolicy);
 
         return endpoints;
     }
@@ -38,12 +43,17 @@ public static class AuthEndpoints
     /// <summary>
     /// Request payload for registering a new user.
     /// </summary>
-    public sealed record RegisterRequest(string UserName, string Email, string Password);
+    public sealed record RegisterRequest(
+        [Required, MaxLength(64)] string UserName,
+        [Required, EmailAddress, MaxLength(254)] string Email,
+        [Required, MaxLength(128)] string Password);
 
     /// <summary>
     /// Request payload for logging in.
     /// </summary>
-    public sealed record LoginRequest(string UserName, string Password);
+    public sealed record LoginRequest(
+        [Required, MaxLength(64)] string UserName,
+        [Required, MaxLength(128)] string Password);
 
     /// <summary>
     /// Response returned when login succeeds. Contains a JWT and expiration.
@@ -107,10 +117,18 @@ public static class AuthEndpoints
         }
 
         // Verify the password using Identity's password hasher and validators
-        if (!await userManager.CheckPasswordAsync(user, request.Password))
+        if (await userManager.IsLockedOutAsync(user))
         {
             return Results.Unauthorized();
         }
+
+        if (!await userManager.CheckPasswordAsync(user, request.Password))
+        {
+            await userManager.AccessFailedAsync(user);
+            return Results.Unauthorized();
+        }
+
+        await userManager.ResetAccessFailedCountAsync(user);
 
         // Read JWT configuration values. These should be provided in
         // appsettings.Development.json for local testing or via secure

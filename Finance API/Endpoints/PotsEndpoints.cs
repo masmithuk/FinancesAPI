@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using System.Security.Claims;
 using Finance_API.Persistence;
 using Finance_API.Persistence.Entities;
@@ -111,10 +112,10 @@ public static class PotsEndpoints
     /// <summary>
     /// Request payload to create a new pot.
     /// </summary>
-    public sealed record CreatePotRequest(string Name);
+    public sealed record CreatePotRequest([Required, MaxLength(100)] string Name);
 
     /// <summary>Request payload to update a pot's name and owning account.</summary>
-    public sealed record UpdatePotRequest(string Name, Guid AccountId);
+    public sealed record UpdatePotRequest([Required, MaxLength(100)] string Name, Guid AccountId);
 
     /// <summary>
     /// Public representation of a pot returned by the API.
@@ -124,16 +125,16 @@ public static class PotsEndpoints
     /// <summary>
     /// Request payload to create a simple savings goal attached to a pot.
     /// </summary>
-    public sealed record CreateGoalRequest(decimal TargetAmount, DateTime? DueDate);
+    public sealed record CreateGoalRequest([Range(typeof(decimal), "0.01", "999999999")] decimal TargetAmount, DateTime? DueDate);
 
     /// <summary>Request payload to update a savings goal.</summary>
-    public sealed record UpdateGoalRequest(decimal TargetAmount, DateTime? DueDate);
+    public sealed record UpdateGoalRequest([Range(typeof(decimal), "0.01", "999999999")] decimal TargetAmount, DateTime? DueDate);
 
     /// <summary>Request payload for adding money to a pot, optionally from an account.</summary>
-    public sealed record CreateContributionRequest(Guid? AccountId, decimal Amount, DateTime Date);
+    public sealed record CreateContributionRequest(Guid? AccountId, [Range(typeof(decimal), "-999999999", "999999999")] decimal Amount, DateTime Date);
 
     /// <summary>Request payload for updating a pot contribution and its optional source account.</summary>
-    public sealed record UpdateContributionRequest(Guid? AccountId, decimal Amount, DateTime Date);
+    public sealed record UpdateContributionRequest(Guid? AccountId, [Range(typeof(decimal), "-999999999", "999999999")] decimal Amount, DateTime Date);
 
     /// <summary>Represents a contribution made to a pot, optionally from an account.</summary>
     public sealed record ContributionResponse(
