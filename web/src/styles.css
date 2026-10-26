@@ -62,6 +62,34 @@ body {
   background: #f4f6f3;
   color: #1c2926;
 }
+.dark {
+  color-scheme: dark;
+  --ink: #e3eae5;
+  --muted: #a0ada5;
+  --line: #303c35;
+  --paper: #202a24;
+  --background: oklch(0.19 0.015 155);
+  --foreground: oklch(0.92 0.01 155);
+  --card: oklch(0.24 0.015 155);
+  --card-foreground: oklch(0.92 0.01 155);
+  --popover: oklch(0.24 0.015 155);
+  --popover-foreground: oklch(0.92 0.01 155);
+  --primary: oklch(0.72 0.09 145);
+  --primary-foreground: oklch(0.2 0.02 155);
+  --secondary: oklch(0.3 0.015 155);
+  --secondary-foreground: oklch(0.9 0.01 155);
+  --muted-foreground: oklch(0.72 0.015 155);
+  --accent: oklch(0.3 0.015 155);
+  --accent-foreground: oklch(0.9 0.01 155);
+  --border: oklch(0.36 0.015 155);
+  --input: oklch(0.36 0.015 155);
+  --sidebar: oklch(0.22 0.015 155);
+  --sidebar-foreground: oklch(0.92 0.01 155);
+}
+.dark body {
+  background: #151c19;
+  color: var(--ink);
+}
 ::selection {
   background: #d8e9bd;
   color: var(--ink);
@@ -261,6 +289,22 @@ body {
   color: #828c86;
   font-size: 10px;
 }
+.theme-toggle {
+  width: 34px;
+  height: 34px;
+  margin-left: 8px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  color: var(--ink);
+}
+.theme-toggle svg {
+  display: block;
+  width: 17px;
+  height: 17px;
+}
+.dark .theme-toggle {
+  color: #e4d69a;
+}
 .secure-dot {
   width: 7px;
   height: 7px;
@@ -445,6 +489,57 @@ p {
   margin: 5px 0 12px;
   color: var(--muted);
   font-size: 10px;
+}
+.pot-shortfall-card {
+  align-self: stretch;
+}
+.pot-shortfall-list {
+  display: grid;
+}
+.pot-shortfall-row {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-height: 70px;
+  padding: 10px 0;
+  border-bottom: 1px solid #eff1ee;
+}
+.pot-shortfall-details {
+  display: grid;
+  flex: 1;
+  gap: 6px;
+  min-width: 0;
+}
+.pot-shortfall-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.pot-shortfall-heading strong {
+  overflow: hidden;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pot-shortfall-heading span,
+.pot-shortfall-details small {
+  color: var(--muted);
+  font-size: 9px;
+  white-space: nowrap;
+}
+.pot-shortfall-progress {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #edf1e9;
+}
+.pot-shortfall-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #82a36e;
+  transition: width 180ms ease;
 }
 .subtle-link {
   margin-top: auto;
@@ -911,12 +1006,19 @@ p {
   margin-bottom: 12px;
   border-top: 1px solid rgba(68, 83, 67, 0.12);
 }
+.pot-card .goal-list,
+.pot-card > .border-t,
+.pot-card .goal-form {
+  margin-top: 16px;
+}
+.pot-card .goal-list + .border-t {
+  margin-top: 4px;
+}
 .goal-row {
   display: flex;
   justify-content: space-between;
   gap: 7px;
   padding: 9px 0;
-  border-bottom: 1px solid rgba(68, 83, 67, 0.12);
   color: #687369;
   font-size: 9px;
 }
@@ -1164,8 +1266,145 @@ p {
 .session-notice {
   position: fixed;
   z-index: 10;
-  top: 12px;
-  right: 12px;
+  top: 16px;
+  right: 16px;
+  width: min(420px, calc(100vw - 32px));
+  padding: 14px 16px;
+  border-color: #edc9c2;
+  border-radius: 10px;
+  background: #fff8f6;
+  box-shadow: 0 10px 30px rgba(46, 35, 31, 0.14);
+  color: #8d4037;
+}
+.session-notice [data-slot="alert-description"] {
+  color: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.dark .sidebar,
+.dark .mobile-nav,
+.dark .metric-card,
+.dark .welcome-card,
+.dark .create-pot-card,
+.dark .pot-shortfall-card,
+.dark .panel {
+  background: #202a24;
+  color: var(--ink);
+}
+.dark .topbar {
+  border-color: var(--line);
+  background: rgba(32, 42, 36, 0.92);
+}
+.dark .main-content,
+.dark .app-shell {
+  background: #151c19;
+}
+.dark .sidebar {
+  border-color: var(--line);
+}
+.dark .brand,
+.dark .page-heading h1,
+.dark .auth-form-wrap h2 {
+  color: var(--ink);
+}
+.dark .nav-item {
+  color: #b3beb6;
+}
+.dark .nav-item:hover,
+.dark .nav-item.active {
+  background: #2b3a30;
+  color: #dcebd5;
+}
+.dark .breadcrumb,
+.dark .topbar-right,
+.dark .muted,
+.dark .pot-shortfall-heading span,
+.dark .pot-shortfall-details small,
+.dark .panel [data-slot="card-description"] {
+  color: #a0ada5;
+}
+.dark .account-name small,
+.dark .select-account small,
+.dark .profile-text small,
+.dark .loading-state,
+.dark .privacy-note div span,
+.dark .metric-card p,
+.dark .recommendation small,
+.dark .empty-state p,
+.dark .welcome-card p,
+.dark .create-pot-card p,
+.dark .pot-card > p,
+.dark .payday-summary-label {
+  color: #c2cec5;
+}
+.dark .bg-muted\/50,
+.dark .bg-muted\/60 {
+  background-color: #3a4c40;
+}
+.dark .bg-muted {
+  background-color: #46594b;
+}
+.dark .profile-text strong,
+.dark .activity-description small,
+.dark .activity-description strong {
+  color: #e3eae5;
+}
+.dark .account-row,
+.dark .data-row,
+.dark .pot-shortfall-row,
+.dark .checklist-row,
+.dark .panel-heading,
+.dark .goal-list,
+.dark .goal-row {
+  border-color: #354139;
+}
+.dark .account-symbol,
+.dark .metric-icon.sage,
+.dark .welcome-flower,
+.dark .empty-mark {
+  background: #304034;
+  color: #c5d9b3;
+}
+.dark .symbol-1,
+.dark .metric-icon.peach {
+  background: #45372b;
+  color: #e1bd96;
+}
+.dark .symbol-2 {
+  background: #303945;
+  color: #b7c6df;
+}
+.dark .pot-shortfall-progress {
+  background: #354139;
+}
+.dark .select-account,
+.dark .create-pot-card,
+.dark .pot-card,
+.dark .account-detail-card {
+  border-color: #354139;
+  background: #202a24;
+  color: var(--ink);
+}
+.dark .select-account.selected {
+  border-color: #536b51;
+  background: #2b3a30;
+}
+.dark .goal-row strong,
+.dark .pot-card h2,
+.dark .create-pot-card h2,
+.dark .account-detail-card h2 {
+  color: #dce5dd;
+}
+.dark .recommendation {
+  border-color: #354139;
+}
+.dark .recommendation-icon,
+.dark .forecast-stats div {
+  background: #2b3a30;
+}
+.dark .secure-dot {
+  background: #83b977;
 }
 
 @media (max-width: 1000px) {
@@ -1322,6 +1561,7 @@ p {
   .session-notice {
     right: 8px;
     left: 8px;
+    width: auto;
     text-align: center;
   }
 }
@@ -1394,7 +1634,7 @@ p {
   --secondary: oklch(0.269 0 0);
   --secondary-foreground: oklch(0.985 0 0);
   --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
+  --muted-foreground: oklch(0.82 0.015 155);
   --accent: oklch(0.269 0 0);
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.704 0.191 22.216);

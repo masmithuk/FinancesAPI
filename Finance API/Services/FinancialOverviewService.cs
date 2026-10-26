@@ -27,7 +27,7 @@ public sealed class FinancialOverviewService
     // AvailableForSpending represents the account balance plus near-term scheduled and pending movements
     public record AccountSummary(Guid AccountId, string Name, decimal AvailableForSpending, decimal Balance = 0m);
 
-    public record PotShortfall(Guid PotId, string PotName, decimal Shortfall);
+    public record PotShortfall(Guid PotId, string PotName, decimal Shortfall, decimal SavedAmount, decimal TargetAmount);
 
     // Include the target account id for recommendations so clients can display where the pot resides
     public record TransferSuggestion(Guid FromAccountId, Guid ToAccountId, Guid ToPotId, decimal Amount, string Explanation);
@@ -109,7 +109,7 @@ public sealed class FinancialOverviewService
             {
                 var saved = p.Contributions.Sum(c => c.Amount);
                 var shortfall = Math.Max(0, goal.TargetAmount - saved);
-                if (shortfall > 0) potShortfalls.Add(new PotShortfall(p.Id, p.Name, shortfall));
+                if (shortfall > 0) potShortfalls.Add(new PotShortfall(p.Id, p.Name, shortfall, saved, goal.TargetAmount));
             }
         }
 

@@ -3,7 +3,7 @@ import { ApiError, api, type FinancialOverview, type PaydayPlan, type SetupStatu
 import { dateLabel, money } from "../shared/format";
 import { buildShareSummary, whatsAppShareUrl } from "../lib/shareSummary";
 import { Button } from "../shared/Controls";
-import { EmptyState, ErrorMessage, MetricCard, PageHeading, Panel } from "../shared/Ui";
+import { EmptyState, ErrorMessage, PageHeading, Panel } from "../shared/Ui";
 import type { Page } from "../types";
 
 export default function OverviewPage({
@@ -128,13 +128,17 @@ export default function OverviewPage({
               <div className="grid gap-5">
                 <div className="grid gap-3 md:grid-cols-3">
                   <div className="rounded-lg bg-muted/60 p-3">
-                    <span className="text-xs text-muted-foreground">Total income</span>
+                    <span className="payday-summary-label text-xs text-muted-foreground">
+                      Total income
+                    </span>
                     <strong className="mt-1 block text-lg">
                       {money(paydayPlan.scheduledIncome)}
                     </strong>
                   </div>
                   <div className="rounded-lg bg-muted/60 p-3">
-                    <span className="text-xs text-muted-foreground">Total expenditure</span>
+                    <span className="payday-summary-label text-xs text-muted-foreground">
+                      Total expenditure
+                    </span>
                     <strong className="mt-1 block text-lg">
                       {money(paydayPlan.scheduledExpenses)}
                     </strong>
@@ -253,15 +257,57 @@ export default function OverviewPage({
                 <i />
               </div>
             </div>
-            <MetricCard
-              icon="◎"
-              tone="peach"
-              label="POT SHORTFALLS"
-              value={summary?.potShortfalls.length ?? 0}
-              description="Goals to give a little attention"
-              actionLabel="View pots"
-              onAction={() => onNavigate("pots")}
-            />
+            <Panel
+              title="Goals to give a little attention"
+              subtitle={`${summary?.potShortfalls.length ?? 0} ${summary?.potShortfalls.length === 1 ? "goal" : "goals"} need attention`}
+              className="pot-shortfall-card"
+            >
+              {summary?.potShortfalls.length ? (
+                <div className="pot-shortfall-list">
+                  {summary.potShortfalls.map((pot, index) => {
+                    const progress = Math.min((pot.savedAmount / pot.targetAmount) * 100, 100);
+                    return (
+                      <div className="pot-shortfall-row" key={pot.potId}>
+                        <span className={`account-symbol symbol-${index % 3}`} aria-hidden="true">
+                          ◎
+                        </span>
+                        <div className="pot-shortfall-details">
+                          <div className="pot-shortfall-heading">
+                            <strong>{pot.potName}</strong>
+                            <span>{money(pot.shortfall)} to go</span>
+                          </div>
+                          <div
+                            className="pot-shortfall-progress"
+                            role="progressbar"
+                            aria-label={`${pot.potName} goal progress`}
+                            aria-valuemin={0}
+                            aria-valuemax={pot.targetAmount}
+                            aria-valuenow={Math.min(pot.savedAmount, pot.targetAmount)}
+                          >
+                            <span style={{ width: `${progress}%` }} />
+                          </div>
+                          <small>
+                            {money(pot.savedAmount)} saved of {money(pot.targetAmount)}
+                          </small>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <Button
+                    variant="link"
+                    className="panel-footer-link"
+                    onClick={() => onNavigate("pots")}
+                  >
+                    View pots <span>→</span>
+                  </Button>
+                </div>
+              ) : (
+                <EmptyState
+                  title="All goals are on track"
+                  text="There are no pot shortfalls to catch up on right now."
+                />
+              )}
+            </Panel>
           </section>
           <section className="content-grid">
             <Panel title="Your accounts" subtitle="A quick look at what’s available">

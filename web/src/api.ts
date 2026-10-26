@@ -95,6 +95,8 @@ export interface FinancialOverview {
     potId: string;
     potName: string;
     shortfall: number;
+    savedAmount: number;
+    targetAmount: number;
   }>;
   safeToSpend: number;
   recommendations: Array<{
