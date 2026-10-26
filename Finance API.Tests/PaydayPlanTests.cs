@@ -86,7 +86,7 @@ public sealed class PaydayPlanTests
         var transfer = Assert.Single(root.GetProperty("transfers").EnumerateArray());
         Assert.Equal(incomeAccountId, transfer.GetProperty("fromAccountId").GetGuid());
         Assert.Equal(expenseAccountId, transfer.GetProperty("toAccountId").GetGuid());
-        Assert.Equal(300m, transfer.GetProperty("amount").GetDecimal());
+        Assert.Equal(200m, transfer.GetProperty("amount").GetDecimal());
 
         var accounts = root.GetProperty("accounts").EnumerateArray().ToList();
         var bills = Assert.Single(accounts, account =>

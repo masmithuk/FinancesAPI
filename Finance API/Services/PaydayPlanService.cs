@@ -114,14 +114,23 @@ public sealed class PaydayPlanService(FinanceDbContext db) : IPaydayPlanService
                 .Select(_ => schedule.AccountId))
             .ToHashSet();
 
+        var balanceByAccount = (await db.Balances
+                .Where(balance => accountIds.Contains(balance.AccountId) && balance.Date.Date <= today)
+                .GroupBy(balance => balance.AccountId)
+                .Select(group => new { AccountId = group.Key, Total = group.Sum(balance => balance.Amount) })
+                .ToListAsync(cancellationToken))
+            .ToDictionary(item => item.AccountId, item => item.Total);
+
+        // Money already in an account (including salary already received) counts towards its bills.
+        var fundsByAccount = accounts.ToDictionary(
+            account => account.Id,
+            account => balanceByAccount.GetValueOrDefault(account.Id) + incomeByAccount[account.Id]);
         var transferNeeded = accounts.ToDictionary(
             account => account.Id,
-            account => Math.Max(0m, expensesDueByAccount[account.Id] - incomeByAccount[account.Id]));
-        var availableSources = accounts
-            .Where(account => incomeAccountIds.Contains(account.Id))
-            .ToDictionary(
-                account => account.Id,
-                account => Math.Max(0m, incomeByAccount[account.Id] - expensesDueByAccount[account.Id]));
+            account => Math.Max(0m, expensesDueByAccount[account.Id] - fundsByAccount[account.Id]));
+        var availableSources = accounts.ToDictionary(
+            account => account.Id,
+            account => Math.Max(0m, fundsByAccount[account.Id] - expensesDueByAccount[account.Id]));
         var transfers = new List<TransferRecommendationResponse>();
         var unfunded = transferNeeded.ToDictionary(pair => pair.Key, pair => pair.Value);
 
@@ -130,7 +139,6 @@ public sealed class PaydayPlanService(FinanceDbContext db) : IPaydayPlanService
                      .OrderBy(account => account.Name))
         {
             foreach (var source in accounts.Where(account =>
-                         incomeAccountIds.Contains(account.Id) &&
                          account.Id != target.Id &&
                          availableSources[account.Id] > 0))
             {
@@ -160,9 +168,7 @@ public sealed class PaydayPlanService(FinanceDbContext db) : IPaydayPlanService
                 incomeAccountIds.Contains(account.Id)))
             .ToList();
 
-        var currentBalance = await db.Balances
-            .Where(balance => accountIds.Contains(balance.AccountId) && balance.Date.Date <= today)
-            .SumAsync(balance => (decimal?)balance.Amount, cancellationToken) ?? 0m;
+        var currentBalance = balanceByAccount.Values.Sum();
 
         // Whole pay period, from payday to the next payday: every planned income and expense.
         var periodStart = payWindow.Start;
