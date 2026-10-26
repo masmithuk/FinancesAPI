@@ -41,6 +41,18 @@ public static class PotsEndpoints
             .WithName("GetPot")
             .WithTags("Pots");
 
+        endpoints.MapPut("/api/accounts/{accountId}/pots/{id}", UpdatePotAsync)
+            .RequireAuthorization()
+            .WithName("UpdatePot")
+            .WithTags("Pots")
+            .WithSummary("Update a pot's name or account");
+
+        endpoints.MapDelete("/api/accounts/{accountId}/pots/{id}", DeletePotAsync)
+            .RequireAuthorization()
+            .WithName("DeletePot")
+            .WithTags("Pots")
+            .WithSummary("Delete a pot and its goals");
+
         endpoints.MapPost("/api/pots/{potId}/goals", CreateGoalAsync)
             .RequireAuthorization()
             .WithName("CreateGoal")
@@ -50,6 +62,42 @@ public static class PotsEndpoints
             .RequireAuthorization()
             .WithName("ListGoals")
             .WithTags("Goals");
+
+        endpoints.MapPut("/api/pots/{potId}/goals/{id}", UpdateGoalAsync)
+            .RequireAuthorization()
+            .WithName("UpdateGoal")
+            .WithTags("Goals")
+            .WithSummary("Update a savings goal");
+
+        endpoints.MapDelete("/api/pots/{potId}/goals/{id}", DeleteGoalAsync)
+            .RequireAuthorization()
+            .WithName("DeleteGoal")
+            .WithTags("Goals")
+            .WithSummary("Delete a savings goal");
+
+        endpoints.MapGet("/api/pots/{potId}/contributions", ListContributionsAsync)
+            .RequireAuthorization()
+            .WithName("ListPotContributions")
+            .WithTags("Pots")
+            .WithSummary("List contributions made to a pot");
+
+        endpoints.MapPost("/api/pots/{potId}/contributions", CreateContributionAsync)
+            .RequireAuthorization()
+            .WithName("CreatePotContribution")
+            .WithTags("Pots")
+            .WithSummary("Add money to a pot, optionally debiting a selected account");
+
+        endpoints.MapPut("/api/pots/{potId}/contributions/{id}", UpdateContributionAsync)
+            .RequireAuthorization()
+            .WithName("UpdatePotContribution")
+            .WithTags("Pots")
+            .WithSummary("Update a contribution and its linked account debit");
+
+        endpoints.MapDelete("/api/pots/{potId}/contributions/{id}", DeleteContributionAsync)
+            .RequireAuthorization()
+            .WithName("DeletePotContribution")
+            .WithTags("Pots")
+            .WithSummary("Delete a contribution and its linked account debit");
 
         // Running balances for an account (cumulative by date)
         endpoints.MapGet("/api/accounts/{accountId}/running-balances", GetRunningBalancesAsync)
@@ -65,6 +113,9 @@ public static class PotsEndpoints
     /// </summary>
     public sealed record CreatePotRequest(string Name);
 
+    /// <summary>Request payload to update a pot's name and owning account.</summary>
+    public sealed record UpdatePotRequest(string Name, Guid AccountId);
+
     /// <summary>
     /// Public representation of a pot returned by the API.
     /// </summary>
@@ -74,6 +125,23 @@ public static class PotsEndpoints
     /// Request payload to create a simple savings goal attached to a pot.
     /// </summary>
     public sealed record CreateGoalRequest(decimal TargetAmount, DateTime? DueDate);
+
+    /// <summary>Request payload to update a savings goal.</summary>
+    public sealed record UpdateGoalRequest(decimal TargetAmount, DateTime? DueDate);
+
+    /// <summary>Request payload for adding money to a pot, optionally from an account.</summary>
+    public sealed record CreateContributionRequest(Guid? AccountId, decimal Amount, DateTime Date);
+
+    /// <summary>Request payload for updating a pot contribution and its optional source account.</summary>
+    public sealed record UpdateContributionRequest(Guid? AccountId, decimal Amount, DateTime Date);
+
+    /// <summary>Represents a contribution made to a pot, optionally from an account.</summary>
+    public sealed record ContributionResponse(
+        Guid Id,
+        Guid? AccountId,
+        string? AccountName,
+        decimal Amount,
+        DateTime Date);
 
     /// <summary>
     /// Public representation of a goal returned by the API.
@@ -137,6 +205,69 @@ public static class PotsEndpoints
         return Results.Ok(new PotResponse(pot.Id, pot.Name, pot.AccountId));
     }
 
+    private static async Task<IResult> UpdatePotAsync(
+        Guid accountId,
+        Guid id,
+        UpdatePotRequest request,
+        FinanceDbContext db,
+        ClaimsPrincipal user,
+        Finance_API.Services.IUserContextService userContext,
+        CancellationToken cancellationToken)
+    {
+        var ownerId = userContext.GetUserId(user);
+        if (string.IsNullOrEmpty(ownerId)) return Results.Unauthorized();
+        if (string.IsNullOrWhiteSpace(request.Name)) return Results.BadRequest(new { detail = "Provide a pot name." });
+
+        var sourceAccount = await db.Accounts.FindAsync([accountId], cancellationToken);
+        if (sourceAccount is null || sourceAccount.OwnerId != ownerId) return Results.NotFound();
+
+        var pot = await db.Pots.FirstOrDefaultAsync(
+            item => item.Id == id && item.AccountId == accountId,
+            cancellationToken);
+        if (pot is null) return Results.NotFound();
+
+        var targetAccount = await db.Accounts.FindAsync([request.AccountId], cancellationToken);
+        if (targetAccount is null || targetAccount.OwnerId != ownerId) return Results.NotFound();
+
+        pot.Name = request.Name.Trim();
+        pot.AccountId = targetAccount.Id;
+        await db.SaveChangesAsync(cancellationToken);
+
+        return Results.Ok(new PotResponse(pot.Id, pot.Name, pot.AccountId));
+    }
+
+    private static async Task<IResult> DeletePotAsync(
+        Guid accountId,
+        Guid id,
+        FinanceDbContext db,
+        ClaimsPrincipal user,
+        Finance_API.Services.IUserContextService userContext,
+        CancellationToken cancellationToken)
+    {
+        var ownerId = userContext.GetUserId(user);
+        if (string.IsNullOrEmpty(ownerId)) return Results.Unauthorized();
+
+        var account = await db.Accounts.FindAsync([accountId], cancellationToken);
+        if (account is null || account.OwnerId != ownerId) return Results.NotFound();
+
+        var pot = await db.Pots.FirstOrDefaultAsync(
+            item => item.Id == id && item.AccountId == accountId,
+            cancellationToken);
+        if (pot is null) return Results.NotFound();
+
+        var contributions = await db.PotContributions
+            .Include(item => item.Balance)
+            .Where(item => item.PotId == id)
+            .ToListAsync(cancellationToken);
+        db.PotContributions.RemoveRange(contributions);
+        db.Balances.RemoveRange(contributions
+            .Where(item => item.Balance is not null)
+            .Select(item => item.Balance!));
+        db.Pots.Remove(pot);
+        await db.SaveChangesAsync(cancellationToken);
+        return Results.NoContent();
+    }
+
     /// <summary>
     /// Creates a goal attached to the specified pot. Caller must own the parent account.
     /// </summary>
@@ -169,6 +300,243 @@ public static class PotsEndpoints
             .ToListAsync();
 
         return Results.Ok(goals);
+    }
+
+    private static async Task<IResult> UpdateGoalAsync(
+        Guid potId,
+        Guid id,
+        UpdateGoalRequest request,
+        FinanceDbContext db,
+        ClaimsPrincipal user,
+        Finance_API.Services.IUserContextService userContext,
+        CancellationToken cancellationToken)
+    {
+        var ownerId = userContext.GetUserId(user);
+        if (string.IsNullOrEmpty(ownerId)) return Results.Unauthorized();
+        if (request.TargetAmount <= 0) return Results.BadRequest(new { detail = "The target amount must be greater than zero." });
+
+        var pot = await db.Pots
+            .Include(item => item.Account)
+            .FirstOrDefaultAsync(item => item.Id == potId, cancellationToken);
+        if (pot?.Account is null || pot.Account.OwnerId != ownerId) return Results.NotFound();
+
+        var goal = await db.Goals.FirstOrDefaultAsync(
+            item => item.Id == id && item.PotId == potId,
+            cancellationToken);
+        if (goal is null) return Results.NotFound();
+
+        goal.TargetAmount = request.TargetAmount;
+        goal.DueDate = request.DueDate?.Date;
+        await db.SaveChangesAsync(cancellationToken);
+
+        return Results.Ok(new GoalResponse(goal.Id, goal.TargetAmount, goal.DueDate));
+    }
+
+    private static async Task<IResult> DeleteGoalAsync(
+        Guid potId,
+        Guid id,
+        FinanceDbContext db,
+        ClaimsPrincipal user,
+        Finance_API.Services.IUserContextService userContext,
+        CancellationToken cancellationToken)
+    {
+        var ownerId = userContext.GetUserId(user);
+        if (string.IsNullOrEmpty(ownerId)) return Results.Unauthorized();
+
+        var pot = await db.Pots
+            .Include(item => item.Account)
+            .FirstOrDefaultAsync(item => item.Id == potId, cancellationToken);
+        if (pot?.Account is null || pot.Account.OwnerId != ownerId) return Results.NotFound();
+
+        var goal = await db.Goals.FirstOrDefaultAsync(
+            item => item.Id == id && item.PotId == potId,
+            cancellationToken);
+        if (goal is null) return Results.NotFound();
+
+        db.Goals.Remove(goal);
+        await db.SaveChangesAsync(cancellationToken);
+        return Results.NoContent();
+    }
+
+    private static async Task<IResult> ListContributionsAsync(
+        Guid potId,
+        FinanceDbContext db,
+        ClaimsPrincipal user,
+        Finance_API.Services.IUserContextService userContext,
+        CancellationToken cancellationToken)
+    {
+        var ownerId = userContext.GetUserId(user);
+        var pot = await db.Pots
+            .Include(item => item.Account)
+            .FirstOrDefaultAsync(item => item.Id == potId, cancellationToken);
+        if (pot?.Account is null || pot.Account.OwnerId != ownerId) return Results.NotFound();
+
+        var contributions = await db.PotContributions
+            .Where(item => item.PotId == potId)
+            .OrderByDescending(item => item.Date)
+            .ThenByDescending(item => item.Id)
+            .Select(item => new ContributionResponse(
+                item.Id,
+                item.AccountId,
+                item.Account == null ? null : item.Account.Name,
+                item.Amount,
+                item.Date))
+            .ToListAsync(cancellationToken);
+
+        return Results.Ok(contributions);
+    }
+
+    private static async Task<IResult> CreateContributionAsync(
+        Guid potId,
+        CreateContributionRequest request,
+        FinanceDbContext db,
+        ClaimsPrincipal user,
+        Finance_API.Services.IUserContextService userContext,
+        CancellationToken cancellationToken)
+    {
+        var ownerId = userContext.GetUserId(user);
+        if (string.IsNullOrEmpty(ownerId)) return Results.Unauthorized();
+        if (request.Amount <= 0 || request.Date == default)
+            return Results.BadRequest(new { detail = "Provide a positive amount and a valid date." });
+
+        var pot = await db.Pots
+            .Include(item => item.Account)
+            .FirstOrDefaultAsync(item => item.Id == potId, cancellationToken);
+        if (pot?.Account is null || pot.Account.OwnerId != ownerId) return Results.NotFound();
+
+        var sourceAccount = request.AccountId is Guid accountId
+            ? await db.Accounts.FirstOrDefaultAsync(
+                item => item.Id == accountId && item.OwnerId == ownerId,
+                cancellationToken)
+            : null;
+        if (request.AccountId is not null && sourceAccount is null) return Results.NotFound();
+
+        var contribution = new PotContribution
+        {
+            PotId = potId,
+            AccountId = sourceAccount?.Id,
+            Amount = request.Amount,
+            Date = request.Date.Date
+        };
+        if (sourceAccount is not null)
+        {
+            var balance = new Balance
+            {
+                AccountId = sourceAccount.Id,
+                Date = contribution.Date,
+                Amount = -contribution.Amount
+            };
+            contribution.BalanceId = balance.Id;
+            db.Balances.Add(balance);
+        }
+
+        db.PotContributions.Add(contribution);
+        await db.SaveChangesAsync(cancellationToken);
+
+        return Results.Created(
+            $"/api/pots/{potId}/contributions/{contribution.Id}",
+            new ContributionResponse(
+                contribution.Id,
+                contribution.AccountId,
+                sourceAccount?.Name,
+                contribution.Amount,
+                contribution.Date));
+    }
+
+    private static async Task<IResult> UpdateContributionAsync(
+        Guid potId,
+        Guid id,
+        UpdateContributionRequest request,
+        FinanceDbContext db,
+        ClaimsPrincipal user,
+        Finance_API.Services.IUserContextService userContext,
+        CancellationToken cancellationToken)
+    {
+        var ownerId = userContext.GetUserId(user);
+        if (string.IsNullOrEmpty(ownerId)) return Results.Unauthorized();
+        if (request.Amount <= 0 || request.Date == default)
+            return Results.BadRequest(new { detail = "Provide a positive amount and a valid date." });
+
+        var pot = await db.Pots
+            .Include(item => item.Account)
+            .FirstOrDefaultAsync(item => item.Id == potId, cancellationToken);
+        if (pot?.Account is null || pot.Account.OwnerId != ownerId) return Results.NotFound();
+
+        var contribution = await db.PotContributions
+            .Include(item => item.Balance)
+            .FirstOrDefaultAsync(item => item.Id == id && item.PotId == potId, cancellationToken);
+        if (contribution is null) return Results.NotFound();
+
+        var sourceAccount = request.AccountId is Guid accountId
+            ? await db.Accounts.FirstOrDefaultAsync(
+                item => item.Id == accountId && item.OwnerId == ownerId,
+                cancellationToken)
+            : null;
+        if (request.AccountId is not null && sourceAccount is null) return Results.NotFound();
+
+        contribution.AccountId = sourceAccount?.Id;
+        contribution.Amount = request.Amount;
+        contribution.Date = request.Date.Date;
+        if (sourceAccount is null)
+        {
+            if (contribution.Balance is not null)
+                db.Balances.Remove(contribution.Balance);
+            contribution.BalanceId = null;
+            contribution.Balance = null;
+        }
+        else if (contribution.Balance is null)
+        {
+            var balance = new Balance
+            {
+                AccountId = sourceAccount.Id,
+                Amount = -request.Amount,
+                Date = request.Date.Date
+            };
+            contribution.Balance = balance;
+            db.Balances.Add(balance);
+        }
+        else
+        {
+            contribution.Balance.AccountId = sourceAccount.Id;
+            contribution.Balance.Amount = -request.Amount;
+            contribution.Balance.Date = request.Date.Date;
+        }
+        await db.SaveChangesAsync(cancellationToken);
+
+        return Results.Ok(new ContributionResponse(
+            contribution.Id,
+            contribution.AccountId,
+            sourceAccount?.Name,
+            contribution.Amount,
+            contribution.Date));
+    }
+
+    private static async Task<IResult> DeleteContributionAsync(
+        Guid potId,
+        Guid id,
+        FinanceDbContext db,
+        ClaimsPrincipal user,
+        Finance_API.Services.IUserContextService userContext,
+        CancellationToken cancellationToken)
+    {
+        var ownerId = userContext.GetUserId(user);
+        if (string.IsNullOrEmpty(ownerId)) return Results.Unauthorized();
+
+        var pot = await db.Pots
+            .Include(item => item.Account)
+            .FirstOrDefaultAsync(item => item.Id == potId, cancellationToken);
+        if (pot?.Account is null || pot.Account.OwnerId != ownerId) return Results.NotFound();
+
+        var contribution = await db.PotContributions
+            .Include(item => item.Balance)
+            .FirstOrDefaultAsync(item => item.Id == id && item.PotId == potId, cancellationToken);
+        if (contribution is null) return Results.NotFound();
+
+        if (contribution.Balance is not null)
+            db.Balances.Remove(contribution.Balance);
+        db.PotContributions.Remove(contribution);
+        await db.SaveChangesAsync(cancellationToken);
+        return Results.NoContent();
     }
 
     /// <summary>

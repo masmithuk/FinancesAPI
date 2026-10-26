@@ -47,6 +47,18 @@ public static class AccountsEndpoints
             .WithName("ListBalances")
             .WithTags("Accounts");
 
+        endpoints.MapPut("/api/accounts/{id}/balances/{balanceId}", UpdateBalanceAsync)
+            .RequireAuthorization()
+            .WithName("UpdateBalance")
+            .WithTags("Accounts")
+            .WithSummary("Update a dated account balance");
+
+        endpoints.MapDelete("/api/accounts/{id}/balances/{balanceId}", DeleteBalanceAsync)
+            .RequireAuthorization()
+            .WithName("DeleteBalance")
+            .WithTags("Accounts")
+            .WithSummary("Delete a dated account balance");
+
         return endpoints;
     }
 
@@ -64,6 +76,11 @@ public static class AccountsEndpoints
     /// Payload to add a dated balance to an account.
     /// </summary>
     public sealed record AddBalanceRequest(DateTime Date, decimal Amount);
+
+    /// <summary>
+    /// Payload to update a dated account balance.
+    /// </summary>
+    public sealed record UpdateBalanceRequest(DateTime Date, decimal Amount);
 
     /// <summary>
     /// Public representation of a balance returned by the API.
@@ -150,5 +167,66 @@ public static class AccountsEndpoints
             .ToListAsync();
 
         return Results.Ok(balances);
+    }
+
+    /// <summary>
+    /// Updates a dated balance entry for an account owned by the caller.
+    /// </summary>
+    private static async Task<IResult> UpdateBalanceAsync(
+        Guid id,
+        Guid balanceId,
+        UpdateBalanceRequest request,
+        FinanceDbContext db,
+        ClaimsPrincipal user,
+        Finance_API.Services.IUserContextService userContext,
+        CancellationToken cancellationToken)
+    {
+        var ownerId = userContext.GetUserId(user);
+        if (string.IsNullOrEmpty(ownerId)) return Results.Unauthorized();
+
+        var account = await db.Accounts.FindAsync([id], cancellationToken);
+        if (account is null || account.OwnerId != ownerId) return Results.NotFound();
+
+        var balance = await db.Balances.FirstOrDefaultAsync(
+            item => item.Id == balanceId && item.AccountId == id,
+            cancellationToken);
+        if (balance is null) return Results.NotFound();
+        if (await db.PotContributions.AnyAsync(item => item.BalanceId == balanceId, cancellationToken))
+            return Results.Conflict(new { detail = "Update this balance through its linked pot contribution." });
+
+        balance.Date = request.Date.Date;
+        balance.Amount = request.Amount;
+        await db.SaveChangesAsync(cancellationToken);
+
+        return Results.Ok(new BalanceResponse(balance.Id, balance.Date, balance.Amount));
+    }
+
+    /// <summary>
+    /// Deletes a dated balance entry from an account owned by the caller.
+    /// </summary>
+    private static async Task<IResult> DeleteBalanceAsync(
+        Guid id,
+        Guid balanceId,
+        FinanceDbContext db,
+        ClaimsPrincipal user,
+        Finance_API.Services.IUserContextService userContext,
+        CancellationToken cancellationToken)
+    {
+        var ownerId = userContext.GetUserId(user);
+        if (string.IsNullOrEmpty(ownerId)) return Results.Unauthorized();
+
+        var account = await db.Accounts.FindAsync([id], cancellationToken);
+        if (account is null || account.OwnerId != ownerId) return Results.NotFound();
+
+        var balance = await db.Balances.FirstOrDefaultAsync(
+            item => item.Id == balanceId && item.AccountId == id,
+            cancellationToken);
+        if (balance is null) return Results.NotFound();
+        if (await db.PotContributions.AnyAsync(item => item.BalanceId == balanceId, cancellationToken))
+            return Results.Conflict(new { detail = "Delete this balance through its linked pot contribution." });
+
+        db.Balances.Remove(balance);
+        await db.SaveChangesAsync(cancellationToken);
+        return Results.NoContent();
     }
 }

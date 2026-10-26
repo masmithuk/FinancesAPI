@@ -4,6 +4,7 @@
 @accountId = 24fa30b2-9a67-4a70-9b34-a1e4d915a81d
 @targetAccountId = 48fa30b2-9a67-4a70-9b34-a1e4d915a81d
 @potId = 49b7c59e-8bf4-4498-9107-7b4626f219a8
+@contributionId = 917c4e7f-b153-49b7-8849-c7d7f0021a3b
 @scheduleId = b8b18a44-0fd0-47cf-a0c4-5c4d5e92eb83
 @occurrenceId = a590d356-b6f9-461a-b0b4-6b4db260ef40
 
@@ -78,6 +79,20 @@ GET {{Finance_API_HostAddress_Https}}/api/accounts/{{accountId}}/balances
 Authorization: Bearer {{token}}
 Accept: application/json
 
+### Update a dated balance
+PUT {{Finance_API_HostAddress_Https}}/api/accounts/{{accountId}}/balances/{{balanceId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "date": "2026-10-19",
+  "amount": 150.00
+}
+
+### Delete a dated balance
+DELETE {{Finance_API_HostAddress_Https}}/api/accounts/{{accountId}}/balances/{{balanceId}}
+Authorization: Bearer {{token}}
+
 ### Pots and Goals
 ### Create a pot for an account
 POST {{Finance_API_HostAddress_Https}}/api/accounts/{{accountId}}/pots
@@ -98,6 +113,20 @@ GET {{Finance_API_HostAddress_Https}}/api/accounts/{{accountId}}/pots/{{potId}}
 Authorization: Bearer {{token}}
 Accept: application/json
 
+### Update a pot name and account
+PUT {{Finance_API_HostAddress_Https}}/api/accounts/{{accountId}}/pots/{{potId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "Summer holiday",
+  "accountId": "{{accountId}}"
+}
+
+### Delete a pot and its goals
+DELETE {{Finance_API_HostAddress_Https}}/api/accounts/{{accountId}}/pots/{{potId}}
+Authorization: Bearer {{token}}
+
 ### Create a goal on a pot
 POST {{Finance_API_HostAddress_Https}}/api/pots/{{potId}}/goals
 Authorization: Bearer {{token}}
@@ -112,6 +141,51 @@ Content-Type: application/json
 GET {{Finance_API_HostAddress_Https}}/api/pots/{{potId}}/goals
 Authorization: Bearer {{token}}
 Accept: application/json
+
+### Update a goal
+PUT {{Finance_API_HostAddress_Https}}/api/pots/{{potId}}/goals/{{goalId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "targetAmount": 750.00,
+  "dueDate": "2027-07-01"
+}
+
+### Delete a goal
+DELETE {{Finance_API_HostAddress_Https}}/api/pots/{{potId}}/goals/{{goalId}}
+Authorization: Bearer {{token}}
+
+### Add money to a pot from an account (creates a matching negative account balance)
+POST {{Finance_API_HostAddress_Https}}/api/pots/{{potId}}/contributions
+Authorization: {{token}}
+Content-Type: application/json
+
+{
+  "accountId": null,
+  "amount": 50.00,
+  "date": "2026-10-19"
+}
+
+### List pot contributions
+GET {{Finance_API_HostAddress_Https}}/api/pots/{{potId}}/contributions
+Authorization: {{token}}
+Accept: application/json
+
+### Update a contribution and its linked account debit
+PUT {{Finance_API_HostAddress_Https}}/api/pots/{{potId}}/contributions/{{contributionId}}
+Authorization: {{token}}
+Content-Type: application/json
+
+{
+  "accountId": "{{accountId}}",
+  "amount": 75.00,
+  "date": "2026-10-20"
+}
+
+### Delete a contribution and its linked account debit
+DELETE {{Finance_API_HostAddress_Https}}/api/pots/{{potId}}/contributions/{{contributionId}}
+Authorization: {{token}}
 
 ### Running (cumulative) balances for an account
 GET {{Finance_API_HostAddress_Https}}/api/accounts/{{accountId}}/running-balances

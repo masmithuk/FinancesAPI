@@ -19,6 +19,7 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options)
     public DbSet<Pot> Pots { get; set; } = null!;
     public DbSet<ScheduledItem> ScheduledItems { get; set; } = null!;
     public DbSet<Goal> Goals { get; set; } = null!;
+    public DbSet<PotContribution> PotContributions { get; set; } = null!;
     public DbSet<Occurrence> Occurrences { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder builder)
@@ -63,5 +64,23 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options)
             .WithOne(g => g.Pot)
             .HasForeignKey(g => g.PotId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<Pot>()
+            .HasMany(p => p.Contributions)
+            .WithOne(c => c.Pot)
+            .HasForeignKey(c => c.PotId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<Account>()
+            .HasMany(a => a.PotContributions)
+            .WithOne(c => c.Account)
+            .HasForeignKey(c => c.AccountId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        builder.Entity<PotContribution>()
+            .HasOne(c => c.Balance)
+            .WithOne()
+            .HasForeignKey<PotContribution>(c => c.BalanceId)
+            .OnDelete(DeleteBehavior.SetNull);
     }
 }

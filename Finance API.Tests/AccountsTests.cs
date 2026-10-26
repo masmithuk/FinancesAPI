@@ -41,11 +41,45 @@ public sealed class AccountsTests
         var balance = new { Date = DateTime.UtcNow.Date, Amount = 123.45m };
         var balResponse = await client.PostAsJsonAsync($"/api/accounts/{accountId}/balances", balance);
         Assert.Equal(HttpStatusCode.Created, balResponse.StatusCode);
+        var createdBalance = await balResponse.Content.ReadFromJsonAsync<JsonElement>();
+        var balanceId = createdBalance.GetProperty("id").GetGuid();
 
         // List balances
         var listResponse = await client.GetAsync($"/api/accounts/{accountId}/balances");
         Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
         var listJson = await listResponse.Content.ReadAsStringAsync();
         Assert.Contains("123.45", listJson);
+
+        var updateResponse = await client.PutAsJsonAsync(
+            $"/api/accounts/{accountId}/balances/{balanceId}",
+            new { Date = DateTime.UtcNow.Date.AddDays(-1), Amount = -25.50m });
+        Assert.Equal(HttpStatusCode.OK, updateResponse.StatusCode);
+        var updatedBalance = await updateResponse.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(-25.50m, updatedBalance.GetProperty("amount").GetDecimal());
+        Assert.StartsWith(
+            DateTime.UtcNow.Date.AddDays(-1).ToString("yyyy-MM-dd"),
+            updatedBalance.GetProperty("date").GetString(),
+            StringComparison.Ordinal);
+
+        var updatedList = await client.GetFromJsonAsync<JsonElement>($"/api/accounts/{accountId}/balances");
+        Assert.Single(updatedList.EnumerateArray());
+        Assert.Equal(-25.50m, updatedList[0].GetProperty("amount").GetDecimal());
+
+        var deleteResponse = await client.DeleteAsync(
+            $"/api/accounts/{accountId}/balances/{balanceId}");
+        Assert.Equal(HttpStatusCode.NoContent, deleteResponse.StatusCode);
+
+        var emptyBalances = await client.GetFromJsonAsync<JsonElement>(
+            $"/api/accounts/{accountId}/balances");
+        Assert.Empty(emptyBalances.EnumerateArray());
+
+        var missingBalanceResponse = await client.DeleteAsync(
+            $"/api/accounts/{accountId}/balances/{balanceId}");
+        Assert.Equal(HttpStatusCode.NotFound, missingBalanceResponse.StatusCode);
+
+        var missingBalanceUpdateResponse = await client.PutAsJsonAsync(
+            $"/api/accounts/{accountId}/balances/{balanceId}",
+            new { Date = DateTime.UtcNow.Date, Amount = 10m });
+        Assert.Equal(HttpStatusCode.NotFound, missingBalanceUpdateResponse.StatusCode);
     }
 }

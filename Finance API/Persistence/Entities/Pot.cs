@@ -20,4 +20,6 @@ public sealed class Pot
     public Account? Account { get; set; }
 
     public ICollection<Goal> Goals { get; set; } = new List<Goal>();
+
+    public ICollection<PotContribution> Contributions { get; set; } = new List<PotContribution>();
 }

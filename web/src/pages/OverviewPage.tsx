@@ -103,7 +103,7 @@ export default function OverviewPage({
                   <div className="rounded-lg bg-muted/60 p-3">
                     <span className="text-xs text-muted-foreground">Total expenditure</span>
                     <strong className="mt-1 block text-lg">
-                      {money(-paydayPlan.scheduledExpenses)}
+                      {money(paydayPlan.scheduledExpenses)}
                     </strong>
                   </div>
                   <div className="rounded-lg bg-primary/10 p-3">

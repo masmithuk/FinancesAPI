@@ -203,6 +203,39 @@ namespace Finance_API.Persistence.Migrations
                     b.ToTable("Pots");
                 });
 
+            modelBuilder.Entity("Finance_API.Persistence.Entities.PotContribution", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("AccountId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal>("Amount")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("BalanceId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("Date")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("PotId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AccountId");
+
+                    b.HasIndex("BalanceId")
+                        .IsUnique();
+
+                    b.HasIndex("PotId");
+
+                    b.ToTable("PotContributions");
+                });
+
             modelBuilder.Entity("Finance_API.Persistence.Entities.ScheduledItem", b =>
                 {
                     b.Property<Guid>("Id")
@@ -413,6 +446,31 @@ namespace Finance_API.Persistence.Migrations
                     b.Navigation("Account");
                 });
 
+            modelBuilder.Entity("Finance_API.Persistence.Entities.PotContribution", b =>
+                {
+                    b.HasOne("Finance_API.Persistence.Entities.Account", "Account")
+                        .WithMany("PotContributions")
+                        .HasForeignKey("AccountId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Finance_API.Persistence.Entities.Balance", "Balance")
+                        .WithOne()
+                        .HasForeignKey("Finance_API.Persistence.Entities.PotContribution", "BalanceId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Finance_API.Persistence.Entities.Pot", "Pot")
+                        .WithMany("Contributions")
+                        .HasForeignKey("PotId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Account");
+
+                    b.Navigation("Balance");
+
+                    b.Navigation("Pot");
+                });
+
             modelBuilder.Entity("Finance_API.Persistence.Entities.ScheduledItem", b =>
                 {
                     b.HasOne("Finance_API.Persistence.Entities.Account", "Account")
@@ -481,6 +539,8 @@ namespace Finance_API.Persistence.Migrations
 
                     b.Navigation("Occurrences");
 
+                    b.Navigation("PotContributions");
+
                     b.Navigation("Pots");
 
                     b.Navigation("ScheduledItems");
@@ -488,6 +548,8 @@ namespace Finance_API.Persistence.Migrations
 
             modelBuilder.Entity("Finance_API.Persistence.Entities.Pot", b =>
                 {
+                    b.Navigation("Contributions");
+
                     b.Navigation("Goals");
                 });
 #pragma warning restore 612, 618

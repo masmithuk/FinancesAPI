@@ -24,4 +24,5 @@ public sealed class Account
     public ICollection<Pot> Pots { get; set; } = new List<Pot>();
     public ICollection<ScheduledItem> ScheduledItems { get; set; } = new List<ScheduledItem>();
     public ICollection<Occurrence> Occurrences { get; set; } = new List<Occurrence>();
+    public ICollection<PotContribution> PotContributions { get; set; } = new List<PotContribution>();
 }

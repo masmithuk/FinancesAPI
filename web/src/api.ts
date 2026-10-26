@@ -21,6 +21,14 @@ export interface Goal {
   dueDate: string | null;
 }
 
+export interface PotContribution {
+  id: string;
+  accountId: string | null;
+  accountName: string | null;
+  amount: number;
+  date: string;
+}
+
 export interface Schedule {
   id: string;
   name: string;
@@ -196,13 +204,80 @@ export const api = {
       date,
       amount,
     }),
+  updateBalance: (
+    token: string,
+    accountId: string,
+    balanceId: string,
+    date: string,
+    amount: number,
+  ) =>
+    request<Balance>(`/api/accounts/${accountId}/balances/${balanceId}`, token, {
+      method: "PUT",
+      body: JSON.stringify({ date, amount }),
+    }),
+  deleteBalance: (token: string, accountId: string, balanceId: string) =>
+    request<void>(`/api/accounts/${accountId}/balances/${balanceId}`, token, {
+      method: "DELETE",
+    }),
   pots: (token: string, accountId: string) =>
     request<Pot[]>(`/api/accounts/${accountId}/pots`, token),
   createPot: (token: string, accountId: string, name: string) =>
     post<Pot>(`/api/accounts/${accountId}/pots`, token, { name }),
+  updatePot: (
+    token: string,
+    accountId: string,
+    potId: string,
+    name: string,
+    targetAccountId: string,
+  ) =>
+    request<Pot>(`/api/accounts/${accountId}/pots/${potId}`, token, {
+      method: "PUT",
+      body: JSON.stringify({ name, accountId: targetAccountId }),
+    }),
+  deletePot: (token: string, accountId: string, potId: string) =>
+    request<void>(`/api/accounts/${accountId}/pots/${potId}`, token, { method: "DELETE" }),
   goals: (token: string, potId: string) => request<Goal[]>(`/api/pots/${potId}/goals`, token),
   createGoal: (token: string, potId: string, targetAmount: number, dueDate: string | null) =>
     post<Goal>(`/api/pots/${potId}/goals`, token, { targetAmount, dueDate }),
+  updateGoal: (
+    token: string,
+    potId: string,
+    goalId: string,
+    targetAmount: number,
+    dueDate: string | null,
+  ) =>
+    request<Goal>(`/api/pots/${potId}/goals/${goalId}`, token, {
+      method: "PUT",
+      body: JSON.stringify({ targetAmount, dueDate }),
+    }),
+  deleteGoal: (token: string, potId: string, goalId: string) =>
+    request<void>(`/api/pots/${potId}/goals/${goalId}`, token, { method: "DELETE" }),
+  contributions: (token: string, potId: string) =>
+    request<PotContribution[]>(`/api/pots/${potId}/contributions`, token),
+  createContribution: (
+    token: string,
+    potId: string,
+    accountId: string | null,
+    amount: number,
+    date: string,
+  ) =>
+    post<PotContribution>(`/api/pots/${potId}/contributions`, token, { accountId, amount, date }),
+  updateContribution: (
+    token: string,
+    potId: string,
+    contributionId: string,
+    accountId: string | null,
+    amount: number,
+    date: string,
+  ) =>
+    request<PotContribution>(`/api/pots/${potId}/contributions/${contributionId}`, token, {
+      method: "PUT",
+      body: JSON.stringify({ accountId, amount, date }),
+    }),
+  deleteContribution: (token: string, potId: string, contributionId: string) =>
+    request<void>(`/api/pots/${potId}/contributions/${contributionId}`, token, {
+      method: "DELETE",
+    }),
   schedules: (token: string, accountId: string) =>
     request<Schedule[]>(`/api/accounts/${accountId}/schedules`, token),
   createSchedule: (token: string, accountId: string, schedule: Omit<Schedule, "id">) =>

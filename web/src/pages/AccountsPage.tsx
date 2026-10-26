@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { api, type Account, type Balance, type Forecast } from "../api";
+import { ApiError, api, type Account, type Balance, type Forecast } from "../api";
 import NameCreateForm from "../NameCreateForm";
 import { Card } from "@/components/ui/card";
 import { Button, TextField } from "../shared/Controls";
@@ -7,6 +7,7 @@ import { dateLabel, money, today } from "../shared/format";
 import { EmptyState, ErrorMessage, PageHeading, Panel } from "../shared/Ui";
 
 export default function AccountsPage({ token }: { token: string }) {
+  type BalanceEdit = { id: string; date: string; amount: string };
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [balances, setBalances] = useState<Balance[]>([]);
@@ -15,6 +16,8 @@ export default function AccountsPage({ token }: { token: string }) {
   const [accountName, setAccountName] = useState("");
   const [balanceDate, setBalanceDate] = useState(today());
   const [amount, setAmount] = useState("");
+  const [editingBalance, setEditingBalance] = useState<BalanceEdit | null>(null);
+  const [balanceHistoryError, setBalanceHistoryError] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -50,8 +53,9 @@ export default function AccountsPage({ token }: { token: string }) {
   }, [loadAccounts]);
 
   useEffect(() => {
+    setBalanceHistoryError("");
     loadBalances(selectedId).catch((reason: unknown) =>
-      setError(reason instanceof Error ? reason.message : "Unable to load balances."),
+      setBalanceHistoryError(balanceErrorMessage(reason, "load")),
     );
   }, [loadBalances, selectedId]);
 
@@ -78,6 +82,53 @@ export default function AccountsPage({ token }: { token: string }) {
       await loadBalances(selectedId);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to add balance.");
+    }
+  }
+
+  async function saveBalance(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedId || !editingBalance) return;
+    setBalanceHistoryError("");
+    try {
+      await api.updateBalance(
+        token,
+        selectedId,
+        editingBalance.id,
+        editingBalance.date,
+        Number(editingBalance.amount),
+      );
+      setEditingBalance(null);
+    } catch (reason) {
+      setBalanceHistoryError(balanceErrorMessage(reason, "update"));
+      return;
+    }
+
+    try {
+      await loadBalances(selectedId);
+    } catch (reason) {
+      setBalanceHistoryError(
+        `Balance updated, but the history could not be refreshed. ${balanceErrorMessage(reason, "load")}`,
+      );
+    }
+  }
+
+  async function deleteBalance(balance: Balance) {
+    if (!selectedId || !window.confirm("Delete this balance entry? This cannot be undone.")) return;
+    setBalanceHistoryError("");
+    try {
+      await api.deleteBalance(token, selectedId, balance.id);
+      setEditingBalance(null);
+    } catch (reason) {
+      setBalanceHistoryError(balanceErrorMessage(reason, "delete"));
+      return;
+    }
+
+    try {
+      await loadBalances(selectedId);
+    } catch (reason) {
+      setBalanceHistoryError(
+        `Balance deleted, but the history could not be refreshed. ${balanceErrorMessage(reason, "load")}`,
+      );
     }
   }
 
@@ -202,12 +253,74 @@ export default function AccountsPage({ token }: { token: string }) {
                 </Panel>
               )}
               <Panel title="Balance history" subtitle="Your recorded balance entries, newest first">
+                <ErrorMessage message={balanceHistoryError} />
                 {balances.length ? (
                   <div className="data-list">
                     {balances.map((balance) => (
                       <div className="data-row" key={balance.id}>
-                        <div className="date-stamp">{dateLabel(balance.date)}</div>
-                        <strong>{money(balance.amount)}</strong>
+                        {editingBalance?.id === balance.id ? (
+                          <form className="activity-edit-form w-full" onSubmit={saveBalance}>
+                            <div className="form-grid">
+                              <TextField
+                                label="Date"
+                                type="date"
+                                required
+                                value={editingBalance.date}
+                                onChange={(date) => setEditingBalance({ ...editingBalance, date })}
+                              />
+                              <TextField
+                                label="Amount (£)"
+                                type="number"
+                                step="0.01"
+                                required
+                                value={editingBalance.amount}
+                                onChange={(value) =>
+                                  setEditingBalance({ ...editingBalance, amount: value })
+                                }
+                              />
+                            </div>
+                            <div className="activity-edit-actions">
+                              <Button variant="primary" size="small">
+                                Save changes
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="small"
+                                type="button"
+                                onClick={() => setEditingBalance(null)}
+                              >
+                                Cancel
+                              </Button>
+                            </div>
+                          </form>
+                        ) : (
+                          <>
+                            <div className="date-stamp">{dateLabel(balance.date)}</div>
+                            <strong>{money(balance.amount)}</strong>
+                            <div className="activity-row-actions">
+                              <Button
+                                variant="outline"
+                                size="small"
+                                onClick={() =>
+                                  setEditingBalance({
+                                    id: balance.id,
+                                    date: balance.date.slice(0, 10),
+                                    amount: String(balance.amount),
+                                  })
+                                }
+                              >
+                                Edit
+                              </Button>
+                              <Button
+                                variant="danger"
+                                size="small"
+                                onClick={() => deleteBalance(balance)}
+                              >
+                                Delete
+                              </Button>
+                            </div>
+                          </>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -245,4 +358,13 @@ export default function AccountsPage({ token }: { token: string }) {
       </section>
     </>
   );
+}
+
+function balanceErrorMessage(reason: unknown, action: "update" | "delete" | "load") {
+  if (reason instanceof ApiError && reason.status === 404) {
+    return "The running Finance API did not find this balance or endpoint. Restart the Finance API, refresh the page, and try again.";
+  }
+
+  const detail = reason instanceof Error ? reason.message : `Unable to ${action} balance.`;
+  return detail;
 }
