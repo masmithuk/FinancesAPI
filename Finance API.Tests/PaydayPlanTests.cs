@@ -828,6 +828,40 @@ public sealed class PaydayPlanTests
     }
 
     [Fact]
+    public async Task Linked_Shop_Only_Reduces_A_Budget_By_Its_Amount()
+    {
+        // The £300 rent budget after payday has one £50 shop linked to it: £250 is still to come.
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        using var factory = new FinanceApiFactory(connection);
+        using var client = await CreateAuthenticatedClient(factory, "linked-budget-user");
+        var seed = await SeedUpcomingAsync(factory, "linked-budget-user", 0m);
+        var today = DateTime.UtcNow.Date;
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<FinanceDbContext>();
+            var rentId = await db.ScheduledItems.Where(item => item.Name == "Rent" && item.AccountId == seed.BillsId).Select(item => item.Id).SingleAsync();
+            db.Occurrences.Add(new Occurrence
+            {
+                AccountId = seed.BillsId,
+                ScheduledItemId = rentId,
+                Date = today.AddDays(-1),
+                PlanDate = today.AddDays(10),
+                Amount = 50m,
+                IsIncome = false,
+                IsReconciled = true
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var plan = await GetPlanAsync(client, "next");
+
+        var bills = AccountIn(plan, seed.BillsId);
+        Assert.Equal(250m, bills.GetProperty("expensesDue").GetDecimal());
+        Assert.Equal(250m, bills.GetProperty("toSend").GetDecimal());
+    }
+
+    [Fact]
     public async Task Breakdown_Includes_BalanceCheckedOn()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");

@@ -3,6 +3,10 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Microsoft.Data.Sqlite;
 using System.Text.Json;
+using Finance_API.Persistence;
+using Finance_API.Persistence.Entities;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Finance_API.Tests;
 
@@ -64,6 +68,48 @@ public sealed class ForecastTests
 
         Assert.Contains("safeToSpend", fjson);
         Assert.Contains("points", fjson);
+    }
+
+    [Fact]
+    public async Task Forecast_Linked_Shop_Only_Reduces_A_Budget_By_Its_Amount()
+    {
+        // A £300 budget due today has one £50 shop linked to it, so £250 of it is still to come.
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        using var factory = new FinanceApiFactory(connection);
+        using var client = factory.CreateClient();
+        var regResponse = await client.PostAsJsonAsync("/api/auth/register", new { UserName = "fcast-budget", Email = "fcast-budget@example.com", Password = "P@ssword1" });
+        Assert.Equal(HttpStatusCode.Created, regResponse.StatusCode);
+        var loginResponse = await client.PostAsJsonAsync("/api/auth/login", new { UserName = "fcast-budget", Password = "P@ssword1" });
+        var token = (await loginResponse.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("token").GetString();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        var today = DateTime.UtcNow.Date;
+        Guid accountId;
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<FinanceDbContext>();
+            var ownerId = await db.Users.Where(user => user.UserName == "fcast-budget").Select(user => user.Id).SingleAsync();
+            var account = new Account { Name = "Spending", OwnerId = ownerId };
+            var budget = new ScheduledItem { Name = "Food", Account = account, Amount = 300m, StartDate = today, Frequency = 2, IsIncome = false };
+            db.AddRange(account, budget);
+            db.Balances.Add(new Balance { Account = account, Date = today, Amount = 1000m });
+            db.Occurrences.Add(new Occurrence
+            {
+                Account = account,
+                ScheduledItem = budget,
+                Date = today.AddDays(-1),
+                PlanDate = today,
+                Amount = 50m,
+                IsIncome = false,
+                IsReconciled = true
+            });
+            await db.SaveChangesAsync();
+            accountId = account.Id;
+        }
+
+        var forecast = await client.GetFromJsonAsync<JsonElement>($"/api/accounts/{accountId}/forecast");
+
+        Assert.Equal(750m, forecast.GetProperty("safeToSpend").GetDecimal());
     }
 
     // Test: Annual schedules starting on February 29 (leap day)

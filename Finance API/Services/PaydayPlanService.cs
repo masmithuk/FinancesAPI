@@ -155,16 +155,17 @@ public sealed class PaydayPlanService(FinanceDbContext db) : IPaydayPlanService
                 occurrence.Date.Date >= today &&
                 occurrence.Date.Date < eventsEnd)
             .ToListAsync(cancellationToken);
-        // Plan dates already paid by linked activity, whenever it happened (a bill can be paid early),
-        // matching the forecast's rule so the two never disagree.
+        // How much linked activity has already paid towards each plan date, whenever it happened (a bill
+        // can be paid early). A plan date only counts what is still to come: a £50 shop linked to a £700
+        // food budget leaves £650. This matches the forecast's rule so the two never disagree.
         var paidPlanDates = (await db.Occurrences
                 .Where(occurrence =>
                     accountIds.Contains(occurrence.AccountId) &&
                     occurrence.ScheduledItemId != null)
-                .Select(occurrence => new { occurrence.ScheduledItemId, occurrence.PlanDate, occurrence.Date })
+                .Select(occurrence => new { occurrence.ScheduledItemId, occurrence.PlanDate, occurrence.Date, occurrence.Amount })
                 .ToListAsync(cancellationToken))
-            .Select(item => (item.ScheduledItemId!.Value, (item.PlanDate ?? item.Date).Date))
-            .ToHashSet();
+            .GroupBy(item => (item.ScheduledItemId!.Value, (item.PlanDate ?? item.Date).Date))
+            .ToDictionary(group => group.Key, group => group.Sum(item => item.Amount));
 
         // A balance checked against the bank today already includes anything planned for today.
         var checkedToday = accounts
@@ -477,7 +478,7 @@ public sealed class PaydayPlanService(FinanceDbContext db) : IPaydayPlanService
     private static List<CashFlowEvent> BuildEvents(
         IReadOnlyCollection<ScheduledItem> schedules,
         IReadOnlyCollection<Occurrence> occurrences,
-        IReadOnlySet<(Guid ScheduledItemId, DateTime PlanDate)> paidPlanDates,
+        IReadOnlyDictionary<(Guid ScheduledItemId, DateTime PlanDate), decimal> paidPlanDates,
         IReadOnlySet<Guid> checkedOnFromDate,
         DateTime from,
         DateTime to)
@@ -487,8 +488,8 @@ public sealed class PaydayPlanService(FinanceDbContext db) : IPaydayPlanService
         {
             foreach (var date in GetOccurrences(schedule, from, to.AddDays(-1)))
             {
-                if (paidPlanDates.Contains((schedule.Id, date)) ||
-                    (date == from && checkedOnFromDate.Contains(schedule.AccountId)))
+                var stillToCome = schedule.Amount - paidPlanDates.GetValueOrDefault((schedule.Id, date));
+                if (stillToCome <= 0m || (date == from && checkedOnFromDate.Contains(schedule.AccountId)))
                 {
                     continue;
                 }
@@ -496,7 +497,7 @@ public sealed class PaydayPlanService(FinanceDbContext db) : IPaydayPlanService
                 events.Add(new CashFlowEvent(
                     schedule.AccountId,
                     date,
-                    schedule.IsIncome ? schedule.Amount : -schedule.Amount,
+                    schedule.IsIncome ? stillToCome : -stillToCome,
                     schedule.IsIncome));
             }
         }

@@ -47,13 +47,14 @@ public sealed class ForecastService
 
         // Gather scheduled item occurrences within the range
         var schedules = await _db.ScheduledItems.Where(s => s.AccountId == accountId).ToListAsync();
-        // Plan occurrences already paid by a linked activity must not be counted again.
-        var linkedOccurrences = (await _db.Occurrences
+        // Linked activity has already paid part or all of a plan occurrence: only the rest is still to
+        // come (a £50 shop linked to a £700 food budget leaves £650), matching the payday plan.
+        var paidByPlanDate = (await _db.Occurrences
             .Where(o => o.AccountId == accountId && o.ScheduledItemId != null)
-            .Select(o => new { o.ScheduledItemId, o.Date, o.PlanDate })
+            .Select(o => new { o.ScheduledItemId, o.Date, o.PlanDate, o.Amount })
             .ToListAsync())
-            .Select(o => (o.ScheduledItemId, Date: (o.PlanDate ?? o.Date).Date))
-            .ToHashSet();
+            .GroupBy(o => (o.ScheduledItemId, Date: (o.PlanDate ?? o.Date).Date))
+            .ToDictionary(g => g.Key, g => g.Sum(o => o.Amount));
 
         var scheduleEvents = new List<(DateTime Date, decimal Amount)>();
         foreach (var s in schedules)
@@ -61,8 +62,9 @@ public sealed class ForecastService
             var occurrences = ExpandSchedule(s, today, end);
             foreach (var d in occurrences)
             {
-                if (linkedOccurrences.Contains((s.Id, d.Date))) continue;
-                var amt = s.IsIncome ? s.Amount : -s.Amount;
+                var stillToCome = s.Amount - paidByPlanDate.GetValueOrDefault(((Guid?)s.Id, d.Date));
+                if (stillToCome <= 0m) continue;
+                var amt = s.IsIncome ? stillToCome : -stillToCome;
                 scheduleEvents.Add((d, amt));
             }
         }
