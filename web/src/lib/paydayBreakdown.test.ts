@@ -4,10 +4,30 @@ import {
   defaultPeriod,
   fundingNote,
   moneyLeftByAccount,
+  moneyLeftCopy,
   needsBalanceCheck,
   periodLabel,
   showsBreakdown,
 } from "./paydayBreakdown";
+
+describe("moneyLeftCopy", () => {
+  it("explains the next pay period's money as what is left after payday", () => {
+    expect(moneyLeftCopy("upcoming", "2026-12-25T00:00:00")).toEqual({
+      title: "Left in each account after payday",
+      note: "What each account still holds once the transfers above are made and every bill before 25 Dec 2026 is paid.",
+      empty: "Nothing is left over once this pay period’s bills are paid.",
+    });
+  });
+
+  it("explains this pay period's money as spare right now", () => {
+    expect(moneyLeftCopy("current", "2026-12-25T00:00:00")).toEqual({
+      title: "Spare money right now",
+      note: "Money no planned bill needs before 25 Dec 2026, after any transfers above. It’s free to spend or save.",
+      empty:
+        "No money is spare: everything in your accounts is needed for bills before 25 Dec 2026.",
+    });
+  });
+});
 
 describe("periodLabel", () => {
   it("describes this pay period as running until payday", () => {

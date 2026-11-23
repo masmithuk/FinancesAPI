@@ -21,7 +21,7 @@ Preconditions:
 
 - **Before.** Run `scripts/capture.sh mark-transfer-done before`.
 - **Mark it.** Use `find` with query `Mark as done` and pick the button in the `Current → Joint` row (check with `read_page`). Click it. Within a couple of seconds, `Recommended transfers` lists only `Current → Bills £20.00`.
-- **Recalculated.** `Joint` in the breakdown shows Already there `-£900.00` and Send `£0.00`. `Where your money sits after transfers` still lists `Current £1,530.00`: the money moved, but none was spent.
+- **Recalculated.** `Joint` in the breakdown shows Already there `-£900.00` and Send `£0.00`. `Left in each account after payday` still lists `Current £1,530.00`: the money moved, but none was spent.
 - **Side effect.** Run `scripts/capture.sh mark-transfer-done after`. In `after-balances-<joint id>.json`, a new `600` entry with note `Transfer from Current` is dated today. In `after-balances-<current id>.json` there is a `-600` entry with note `Transfer to Joint`. The ids are in `.verify/data/seed.json`.
 - **Proof.** Save the page text before and after to `.verify/artifacts/mark-transfer-done/`.
 - **Back to baseline.** Stop both instances, `reset.sh`, launch and `seed.sh` again.

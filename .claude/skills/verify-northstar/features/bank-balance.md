@@ -23,7 +23,7 @@ Preconditions:
 
 - **Accounts page.** Choose `Accounts`. With `Current` selected (the first account), find the `Amount (£)` textbox in the `Update to bank balance` panel (the second `Amount (£)` on the page) and type `180`. Choose `Update balance`. `Balance history` gains a `Bank balance update` row of `£30.00` dated today, and the running balance shows `£180.00`.
 - **Second view.** Run `scripts/capture.sh bank-balance accounts-update`. The Current balances JSON sums to `180`.
-- **Overview recalculates.** Choose `Overview`, `Next pay period`. `Where your money sits after transfers` now lists `Current £1,560.00` (£30 more).
+- **Overview recalculates.** Choose `Overview`, `Next pay period`. `Left in each account after payday` now lists `Current £1,560.00` (£30 more).
 - **Reminder (day after seeding).** Each account is listed as `Last checked <date>`. Type the bank figure in its `Bank balance (£)` field and choose `Update`. The account leaves the list and the panel recalculates.
 - **Proof.** Save the page text to `.verify/artifacts/bank-balance/`.
 

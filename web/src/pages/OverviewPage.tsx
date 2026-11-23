@@ -244,15 +244,26 @@ export default function OverviewPage({
                       ))}
                   </div>
                 )}
-                <div className="grid gap-2">
-                  <h3 className="text-sm font-semibold">
-                    How each account’s transfer is worked out
-                  </h3>
-                  {paydayPlan.accounts.filter(showsBreakdown).map((account) => (
-                    <AccountBreakdown key={account.accountId} account={account} />
-                  ))}
-                </div>
-                <MoneyLeftAfterTransfers accounts={paydayPlan.accounts} />
+                {paydayPlan.accounts.some(showsBreakdown) && (
+                  <div className="grid gap-2">
+                    <h3 className="text-sm font-semibold">
+                      How each account’s transfer is worked out
+                    </h3>
+                    {paydayPlan.accounts.filter(showsBreakdown).map((account) => (
+                      <AccountBreakdown key={account.accountId} account={account} />
+                    ))}
+                  </div>
+                )}
+                <MoneyLeftAfterTransfers
+                  accounts={paydayPlan.accounts}
+                  mode={paydayPlan.mode}
+                  // This pay period keeps money back until the end of the next one.
+                  until={
+                    (paydayPlan.mode === "current" ? plans.next?.periodEndDate : null) ??
+                    paydayPlan.periodEndDate ??
+                    ""
+                  }
+                />
               </div>
             ) : (
               <div className="grid justify-items-start gap-3">

@@ -1,5 +1,28 @@
 import { dateLabel, money } from "../shared/format";
 
+/**
+ * Wording for the "money left" section. In the next pay period it is what each account holds after
+ * payday's transfers and bills; in this pay period it is money no bill needs before `until` (the end of
+ * the next pay period, the furthest this pay period keeps money back for).
+ */
+export function moneyLeftCopy(
+  mode: "current" | "upcoming",
+  until: string,
+): { title: string; note: string; empty: string } {
+  const date = dateLabel(until);
+  return mode === "upcoming"
+    ? {
+        title: "Left in each account after payday",
+        note: `What each account still holds once the transfers above are made and every bill before ${date} is paid.`,
+        empty: "Nothing is left over once this pay period’s bills are paid.",
+      }
+    : {
+        title: "Spare money right now",
+        note: `Money no planned bill needs before ${date}, after any transfers above. It’s free to spend or save.`,
+        empty: `No money is spare: everything in your accounts is needed for bills before ${date}.`,
+      };
+}
+
 /** The panel's subtitle for a plan: this pay period runs until payday, the next one payday to payday. */
 export function periodLabel(mode: "current" | "upcoming", start: string, end: string): string {
   return mode === "upcoming"

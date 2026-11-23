@@ -37,7 +37,7 @@ Anything else, stop and report the line it printed.
 ## Drive
 
 - **Browser:** use the built-in browser tools on the `verify-web` tab (`http://localhost:5274`). Find elements by accessible name with `find` or `read_page` (`filter: interactive`), then click by `ref`. Don't use coordinates. Read results with `get_page_text` or `read_page`.
-- **Sign in:** fill textbox `Your username` = `verify-user` and textbox `Your password` = `Verify-P@ss1`, then button `Sign in`. These are test values in the verification database only.
+- **Sign in:** fill textbox `Your username` = `verify-user` and textbox `Your password` = `Verify-P@ss1`, then button `Sign in`. These are test values in the verification database only. After every reset, sign out first. The tab keeps the last run's token, which now points at a deleted user, so the Overview looks empty. In a narrow pane, widen the tab (`resize_window` 1280×900) to reach the sidebar's sign-out button. See [`features/sign-in.md`](features/sign-in.md).
 - **Navigation:** buttons `Overview`, `Accounts`, `Pots & goals`, `Activity` in the sidebar (or bottom bar on narrow windows).
 - **API:** `curl` against `http://localhost:5206` with `Authorization: Bearer <token>` from `POST /api/auth/login`. Use it only to set up preconditions or take a second view. The proof of a user-facing feature is the browser path.
 

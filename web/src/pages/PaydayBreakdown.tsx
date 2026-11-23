@@ -4,6 +4,7 @@ import {
   alreadyThereLabel,
   fundingNote,
   moneyLeftByAccount,
+  moneyLeftCopy,
   needsBalanceCheck,
 } from "../lib/paydayBreakdown";
 import { Button, TextField } from "../shared/Controls";
@@ -181,15 +182,26 @@ export function TransferRow({
 }
 
 /** Where the spare (discretionary) money sits once bills are paid and transfers are made. */
-export function MoneyLeftAfterTransfers({ accounts }: { accounts: PlanAccount[] }) {
+export function MoneyLeftAfterTransfers({
+  accounts,
+  mode,
+  until,
+}: {
+  accounts: PlanAccount[];
+  mode: PaydayPlan["mode"];
+  /** The date the money is counted up to, as `YYYY-MM-DD`. */
+  until: string;
+}) {
   const holdings = moneyLeftByAccount(accounts);
+  const copy = moneyLeftCopy(mode, until);
   return (
     <div className="grid gap-2">
-      <h3 className="text-sm font-semibold">Where your money sits after transfers</h3>
+      <div>
+        <h3 className="text-sm font-semibold">{copy.title}</h3>
+        {holdings.length > 0 && <p className="text-xs text-muted-foreground">{copy.note}</p>}
+      </div>
       {holdings.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          Nothing is left over once bills are paid in this pay period.
-        </p>
+        <p className="text-sm text-muted-foreground">{copy.empty}</p>
       ) : (
         holdings.map((holding) => (
           <div

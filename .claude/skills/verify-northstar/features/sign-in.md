@@ -26,5 +26,6 @@ Preconditions:
 
 ## Gotchas
 
-- The session token is kept in the browser, so a tab used for an earlier run may already be signed in. Sign out first to drive `signin-ok`.
+- The session token is kept in the browser, so a tab used for an earlier run may already be signed in. After `reset.sh` and a new seed, that token belongs to a user who no longer exists. The Overview then shows `Add a recurring income schedule to calculate your payday plan.` instead of the seeded plan. Always sign out and sign in again after a reset.
+- In a narrow pane the sidebar, and the sign-out button with it, is hidden. Widen the tab first with `resize_window` (for example 1280×900), and set it back to `preset: desktop` afterwards.
 - Repeated failures may hit the API's sign-in rate limit. Wait a minute rather than retrying in a loop.
