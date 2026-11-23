@@ -126,6 +126,8 @@ export interface PaydayPlan {
   leftToSpend?: number;
   /** "upcoming" shortly before payday, when the plan covers the pay period starting on that payday. */
   mode: "current" | "upcoming";
+  /** No payday has happened yet: this pay period runs from today to the first one, with no income. */
+  noPaydayYet: boolean;
   periodStartDate: string | null;
   /** The following payday; the period runs up to, not including, this date. */
   periodEndDate: string | null;

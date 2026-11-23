@@ -757,6 +757,22 @@ public sealed class PaydayPlanTests
         Assert.Equal(0m, bills.GetProperty("expensesDue").GetDecimal());
         Assert.Equal(0m, bills.GetProperty("unfundedShortfall").GetDecimal());
         Assert.Empty(plan.GetProperty("transfers").EnumerateArray());
+        Assert.True(plan.GetProperty("noPaydayYet").GetBoolean());
+    }
+
+    [Fact]
+    public async Task NoPaydayYet_Is_False_Once_A_Payday_Has_Happened()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        using var factory = new FinanceApiFactory(connection);
+        using var client = await CreateAuthenticatedClient(factory, "had-payday-user");
+        await SeedUpcomingAsync(factory, "had-payday-user", 0m);
+
+        foreach (var period in new[] { "current", "next" })
+        {
+            Assert.False((await GetPlanAsync(client, period)).GetProperty("noPaydayYet").GetBoolean());
+        }
     }
 
     [Fact]

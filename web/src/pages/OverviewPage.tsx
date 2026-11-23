@@ -14,6 +14,7 @@ import {
 } from "./PaydayBreakdown";
 import {
   defaultPeriod,
+  noPaydayYetMessage,
   periodLabel,
   showsBreakdown,
   type PaydayPeriod,
@@ -191,30 +192,39 @@ export default function OverviewPage({
                   onUpdated={refreshPaydayPlan}
                 />
                 <PrePaydayWarning shortfalls={paydayPlan.prePaydayShortfalls} />
-                <div className="grid gap-3 md:grid-cols-3">
-                  <div className="rounded-lg bg-muted/60 p-3">
-                    <span className="payday-summary-label text-xs text-muted-foreground">
-                      Total income
-                    </span>
-                    <strong className="mt-1 block text-lg">
-                      {money(paydayPlan.scheduledIncome)}
-                    </strong>
+                {paydayPlan.noPaydayYet && paydayPlan.periodEndDate ? (
+                  <div className="grid justify-items-start gap-3 rounded-lg border p-3 text-sm">
+                    <p>{noPaydayYetMessage(paydayPlan.periodEndDate)}</p>
+                    <Button variant="outline" size="small" onClick={() => onNavigate("activity")}>
+                      Adjust income & expenses
+                    </Button>
                   </div>
-                  <div className="rounded-lg bg-muted/60 p-3">
-                    <span className="payday-summary-label text-xs text-muted-foreground">
-                      Total expenditure
-                    </span>
-                    <strong className="mt-1 block text-lg">
-                      {money(paydayPlan.scheduledExpenses)}
-                    </strong>
+                ) : (
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <div className="rounded-lg bg-muted/60 p-3">
+                      <span className="payday-summary-label text-xs text-muted-foreground">
+                        Total income
+                      </span>
+                      <strong className="mt-1 block text-lg">
+                        {money(paydayPlan.scheduledIncome)}
+                      </strong>
+                    </div>
+                    <div className="rounded-lg bg-muted/60 p-3">
+                      <span className="payday-summary-label text-xs text-muted-foreground">
+                        Total expenditure
+                      </span>
+                      <strong className="mt-1 block text-lg">
+                        {money(paydayPlan.scheduledExpenses)}
+                      </strong>
+                    </div>
+                    <div className="rounded-lg bg-primary/10 p-3">
+                      <span className="text-xs text-muted-foreground">Discretionary income</span>
+                      <strong className="mt-1 block text-lg">
+                        {money(paydayPlan.discretionaryIncome)}
+                      </strong>
+                    </div>
                   </div>
-                  <div className="rounded-lg bg-primary/10 p-3">
-                    <span className="text-xs text-muted-foreground">Discretionary income</span>
-                    <strong className="mt-1 block text-lg">
-                      {money(paydayPlan.discretionaryIncome)}
-                    </strong>
-                  </div>
-                </div>
+                )}
                 {paydayPlan.transfers.length ? (
                   <div className="grid gap-2">
                     <h3 className="text-sm font-semibold">Recommended transfers</h3>
@@ -286,10 +296,16 @@ export default function OverviewPage({
                 <span className="hero-orbit">✳</span>
               </div>
               <strong className="hero-amount">
-                {paydayPlan ? money(paydayPlan.discretionaryIncome) : "—"}
+                {paydayPlan && !paydayPlan.noPaydayYet
+                  ? money(paydayPlan.discretionaryIncome)
+                  : "—"}
               </strong>
-              <p>Total income less expenses due in this pay period.</p>
-              {paydayPlan?.leftToSpend !== undefined && (
+              <p>
+                {paydayPlan?.noPaydayYet
+                  ? "No payday has happened yet, so this pay period has no income. Switch to Next pay period, or set your salary plan’s start date to your last payday."
+                  : "Total income less expenses due in this pay period."}
+              </p>
+              {paydayPlan?.leftToSpend !== undefined && !paydayPlan.noPaydayYet && (
                 <p className="text-sm">
                   <strong>{money(paydayPlan.leftToSpend)} left to spend</strong> — discretionary
                   income minus everything you’ve spent so far this pay period, across all accounts.

@@ -6,9 +6,18 @@ import {
   moneyLeftByAccount,
   moneyLeftCopy,
   needsBalanceCheck,
+  noPaydayYetMessage,
   periodLabel,
   showsBreakdown,
 } from "./paydayBreakdown";
+
+describe("noPaydayYetMessage", () => {
+  it("explains why this pay period has no totals and how to fix it", () => {
+    expect(noPaydayYetMessage("2026-11-25T00:00:00")).toBe(
+      "No payday has happened yet: your income plans first pay on 25 Nov 2026, so this pay period has no income or totals. If you were paid before then, set your salary plan’s “Starts on” date to your last payday.",
+    );
+  });
+});
 
 describe("moneyLeftCopy", () => {
   it("explains the next pay period's money as what is left after payday", () => {

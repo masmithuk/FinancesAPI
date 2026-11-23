@@ -36,7 +36,10 @@ public sealed record PaydayPlanResponse(
     string Mode = "current",
     DateTime? PeriodStartDate = null,
     DateTime? PeriodEndDate = null,
-    IReadOnlyList<PrePaydayShortfallResponse>? PrePaydayShortfalls = null);
+    IReadOnlyList<PrePaydayShortfallResponse>? PrePaydayShortfalls = null,
+    // True when no payday has happened yet (income plans all start in the future), so this pay period
+    // only runs from today to the first payday and has no income of its own.
+    bool NoPaydayYet = false);
 
 /// <summary>
 /// An account's bills for the planned period and how they are funded: income paid in, the balance
@@ -352,7 +355,8 @@ public sealed class PaydayPlanService(FinanceDbContext db) : IPaydayPlanService
             isUpcoming ? UpcomingMode : CurrentMode,
             periodStart,
             planEnd,
-            prePaydayShortfalls);
+            prePaydayShortfalls,
+            beforeFirstPayday);
     }
 
     private static PaydayPlanResponse EmptyPlan() =>

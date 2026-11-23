@@ -1,5 +1,10 @@
 import { dateLabel, money } from "../shared/format";
 
+/** Shown in place of this pay period's totals before the first payday, when they are all £0. */
+export function noPaydayYetMessage(firstPayday: string): string {
+  return `No payday has happened yet: your income plans first pay on ${dateLabel(firstPayday)}, so this pay period has no income or totals. If you were paid before then, set your salary plan’s “Starts on” date to your last payday.`;
+}
+
 /**
  * Wording for the "money left" section. In the next pay period it is what each account holds after
  * payday's transfers and bills; in this pay period it is money no bill needs before `until` (the end of
