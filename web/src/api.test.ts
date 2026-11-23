@@ -163,4 +163,53 @@ describe("api endpoints", () => {
     expect(fetchMock.mock.calls[1][1].method).toBe("PUT");
     expect(JSON.parse(fetchMock.mock.calls[1][1].body).note).toBe("Rent");
   });
+
+  it("asks for a particular pay period", async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response("{}")));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api.paydayPlan("tok", "next");
+    await api.paydayPlan("tok");
+
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/payday-plan?period=next");
+    expect(fetchMock.mock.calls[1][0]).toBe("/api/payday-plan");
+  });
+
+  it("records a transfer that has been made", async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response("{}")));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api.recordTransfer("tok", "from", "to", 600);
+
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/transfers");
+    expect(fetchMock.mock.calls[0][1].method).toBe("POST");
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      fromAccountId: "from",
+      toAccountId: "to",
+      amount: 600,
+    });
+  });
+
+  it("posts the bank's figure to the actual balance endpoint", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(
+          JSON.stringify({ difference: -25, balanceId: "bal", balanceCheckedOn: "2026-11-23" }),
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    expect(await api.setActualBalance("tok", "acc", 95, "2026-11-23")).toEqual({
+      difference: -25,
+      balanceId: "bal",
+      balanceCheckedOn: "2026-11-23",
+    });
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/accounts/acc/balances/actual");
+    expect(fetchMock.mock.calls[0][1].method).toBe("POST");
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      amount: 95,
+      date: "2026-11-23",
+    });
+  });
 });

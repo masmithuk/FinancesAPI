@@ -225,6 +225,8 @@ app.MapOccurrencesEndpoints();
 app.MapForecastEndpoints();
 // Map Financial Overview and setup endpoints
 app.MapFinancialOverviewEndpoints();
+// Map recording of transfers the user has made between their accounts
+app.MapTransfersEndpoints();
 
 // Start the web server and listen for incoming HTTP requests
 app.Run();

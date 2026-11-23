@@ -34,14 +34,15 @@ npm run build
 Unit tests use Vitest through Vite+ (`vp test`) and live next to the code they cover as
 `*.test.ts` files. Run them once with `npm test`, or in watch mode with `npx vp test watch`.
 
-| Module                    | What it covers                                                                                                                                                       |
-| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/lib/statementCsv.ts` | CSV parsing (delimiters, quotes, line endings, large files), bank column detection, date format detection, signed amount parsing, rounding, and invalid row counting |
-| `src/lib/planMatch.ts`    | Plan occurrence expansion, name and amount matching of transactions to plans, one claim per occurrence                                                               |
-| `src/lib/shareSummary.ts` | Builds the pay-period totals text and WhatsApp link for the Overview share button (totals only, no account names or balances)                                        |
-| `src/shared/format.ts`    | GBP formatting, timezone-safe date labels, and the local `today()` date                                                                                              |
-| `src/lib/utils.ts`        | The `cn` class name helper                                                                                                                                           |
-| `src/api.ts`              | Request headers and bodies, and friendly, non-leaking error messages for network failures, 4xx, 5xx, and malformed responses                                         |
+| Module                       | What it covers                                                                                                                                                       |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/lib/statementCsv.ts`    | CSV parsing (delimiters, quotes, line endings, large files), bank column detection, date format detection, signed amount parsing, rounding, and invalid row counting |
+| `src/lib/planMatch.ts`       | Plan occurrence expansion, name and amount matching of transactions to plans, one claim per occurrence                                                               |
+| `src/lib/shareSummary.ts`    | Builds the pay-period totals text and WhatsApp link for the Overview share button (totals only, no account names or balances)                                        |
+| `src/lib/paydayBreakdown.ts` | The payday breakdown's "already counted" note and £0.00 deduction label, and when an account's balance needs checking against the bank today                         |
+| `src/shared/format.ts`       | GBP formatting, timezone-safe date labels, and the local `today()` date                                                                                              |
+| `src/lib/utils.ts`           | The `cn` class name helper                                                                                                                                           |
+| `src/api.ts`                 | Request headers and bodies, and friendly, non-leaking error messages for network failures, 4xx, 5xx, and malformed responses                                         |
 
 ## Libraries and utilities
 

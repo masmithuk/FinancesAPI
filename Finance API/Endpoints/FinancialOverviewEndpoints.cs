@@ -55,12 +55,29 @@ public static class FinancialOverviewEndpoints
         Finance_API.Services.IPaydayPlanService paydayPlan,
         ClaimsPrincipal user,
         Finance_API.Services.IUserContextService userContext,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? period = null)
     {
         var ownerId = userContext.GetUserId(user);
         if (string.IsNullOrEmpty(ownerId)) return Results.Unauthorized();
 
-        var plan = await paydayPlan.GetPlanAsync(ownerId, cancellationToken);
+        Finance_API.Services.PaydayPeriod paydayPeriod;
+        switch (period?.ToLowerInvariant())
+        {
+            case null:
+                paydayPeriod = Finance_API.Services.PaydayPeriod.Auto;
+                break;
+            case "current":
+                paydayPeriod = Finance_API.Services.PaydayPeriod.Current;
+                break;
+            case "next":
+                paydayPeriod = Finance_API.Services.PaydayPeriod.Next;
+                break;
+            default:
+                return Results.BadRequest(new { errors = new[] { "Period must be 'current' or 'next'." } });
+        }
+
+        var plan = await paydayPlan.GetPlanAsync(ownerId, paydayPeriod, cancellationToken);
         return Results.Ok(plan);
     }
 }

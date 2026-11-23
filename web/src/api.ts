@@ -124,12 +124,34 @@ export interface PaydayPlan {
   discretionaryIncome: number;
   currentBalance?: number;
   leftToSpend?: number;
+  /** "upcoming" shortly before payday, when the plan covers the pay period starting on that payday. */
+  mode: "current" | "upcoming";
+  /** No payday has happened yet: this pay period runs from today to the first one, with no income. */
+  noPaydayYet: boolean;
+  periodStartDate: string | null;
+  /** The following payday; the period runs up to, not including, this date. */
+  periodEndDate: string | null;
+  prePaydayShortfalls: Array<{
+    accountId: string;
+    accountName: string;
+    lowestBalance: number;
+    date: string;
+  }>;
   accounts: Array<{
     accountId: string;
     accountName: string;
     expensesDue: number;
     unfundedShortfall: number;
     receivesPaydayIncome: boolean;
+    incomeIn: number;
+    expectedBalance: number;
+    toSend: number;
+    fromExisting: number;
+    balanceCheckedOn: string | null;
+    /** What the account holds once bills are paid and the recommended transfers are made. */
+    leftAfterTransfers: number;
+    /** Overdraft that bills before payday add to today's balance; part of what to send. */
+    overdraftToCover: number;
   }>;
   transfers: Array<{
     fromAccountId: string;
@@ -250,6 +272,13 @@ export const api = {
     request<Array<{ date: string; cumulativeAmount: number; change?: number; entries?: number }>>(
       `/api/accounts/${accountId}/running-balances`,
       token,
+    ),
+  /** Brings an account to the balance the bank shows; the server records the difference. */
+  setActualBalance: (token: string, accountId: string, amount: number, date?: string) =>
+    post<{ difference: number; balanceId: string | null; balanceCheckedOn: string }>(
+      `/api/accounts/${accountId}/balances/actual`,
+      token,
+      { amount, date },
     ),
   createBalance: (token: string, accountId: string, date: string, amount: number, note?: string) =>
     post<Balance>(`/api/accounts/${accountId}/balances`, token, {
@@ -413,7 +442,16 @@ export const api = {
     post<Occurrence>(`/api/accounts/${accountId}/occurrences/${occurrenceId}/reconcile`, token, {}),
   overview: (token: string) => request<FinancialOverview>("/api/financialoverview", token),
   setup: (token: string) => request<SetupStatus>("/api/setup", token),
-  paydayPlan: (token: string) => request<PaydayPlan>("/api/payday-plan", token),
+  /** With no period, the server picks the next pay period within a week of payday, else this one. */
+  paydayPlan: (token: string, period?: "current" | "next") =>
+    request<PaydayPlan>(period ? `/api/payday-plan?period=${period}` : "/api/payday-plan", token),
+  /** Records a transfer the user has made at their bank, on both accounts. */
+  recordTransfer: (token: string, fromAccountId: string, toAccountId: string, amount: number) =>
+    post<{ fromBalanceId: string; toBalanceId: string; date: string; amount: number }>(
+      "/api/transfers",
+      token,
+      { fromAccountId, toAccountId, amount },
+    ),
   forecast: (token: string, accountId: string) =>
     request<Forecast>(`/api/accounts/${accountId}/forecast`, token),
 };

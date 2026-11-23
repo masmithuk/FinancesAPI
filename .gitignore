@@ -262,3 +262,5 @@ paket-files/
 # Python Tools for Visual Studio (PTVS)
 __pycache__/
 *.pyc
+# Verification runs (verify-northstar skill): disposable data, build output and proof artifacts
+.verify/

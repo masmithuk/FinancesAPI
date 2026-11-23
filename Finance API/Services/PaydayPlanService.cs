@@ -7,7 +7,18 @@ namespace Finance_API.Services;
 /// <summary>Provides inferred payday dates and account funding recommendations.</summary>
 public interface IPaydayPlanService
 {
-    Task<PaydayPlanResponse> GetPlanAsync(string ownerId, CancellationToken cancellationToken);
+    Task<PaydayPlanResponse> GetPlanAsync(string ownerId, PaydayPeriod period, CancellationToken cancellationToken);
+}
+
+/// <summary>
+/// Which pay period to plan: Current runs from today to the next payday, Next from the next payday to the
+/// one after, and Auto picks Next within a week of payday and Current otherwise.
+/// </summary>
+public enum PaydayPeriod
+{
+    Auto,
+    Current,
+    Next
 }
 
 /// <summary>Payday timing, cash-flow totals, account outlook, and suggested transfers.</summary>
@@ -21,15 +32,39 @@ public sealed record PaydayPlanResponse(
     IReadOnlyList<AccountFundingResponse> Accounts,
     IReadOnlyList<TransferRecommendationResponse> Transfers,
     decimal CurrentBalance = 0m,
-    decimal LeftToSpend = 0m);
+    decimal LeftToSpend = 0m,
+    string Mode = "current",
+    DateTime? PeriodStartDate = null,
+    DateTime? PeriodEndDate = null,
+    IReadOnlyList<PrePaydayShortfallResponse>? PrePaydayShortfalls = null,
+    // True when no payday has happened yet (income plans all start in the future), so this pay period
+    // only runs from today to the first payday and has no income of its own.
+    bool NoPaydayYet = false);
 
-/// <summary>An account's scheduled expenses and any amount left unfunded.</summary>
+/// <summary>
+/// An account's bills for the planned period and how they are funded: income paid in, the balance
+/// expected at the start of the period, what to send, and how much of the bills existing money covers.
+/// </summary>
 public sealed record AccountFundingResponse(
     Guid AccountId,
     string AccountName,
     decimal ExpensesDue,
     decimal UnfundedShortfall,
-    bool ReceivesPaydayIncome);
+    bool ReceivesPaydayIncome,
+    decimal IncomeIn = 0m,
+    decimal ExpectedBalance = 0m,
+    decimal ToSend = 0m,
+    decimal FromExisting = 0m,
+    DateTime? BalanceCheckedOn = null,
+    decimal LeftAfterTransfers = 0m,
+    decimal OverdraftToCover = 0m);
+
+/// <summary>An account whose balance is projected to go below zero before the next payday.</summary>
+public sealed record PrePaydayShortfallResponse(
+    Guid AccountId,
+    string AccountName,
+    decimal LowestBalance,
+    DateTime Date);
 
 /// <summary>A suggested transfer between two owned accounts.</summary>
 public sealed record TransferRecommendationResponse(
@@ -44,11 +79,14 @@ public sealed class PaydayPlanService(FinanceDbContext db) : IPaydayPlanService
     private const int PaydayGroupingDays = 2;
     private const int PlanningHorizonMonths = 18;
     private const int PlanningLookBackMonths = 2;
+    private const int UpcomingLookAheadDays = 7;
+    private const string CurrentMode = "current";
+    private const string UpcomingMode = "upcoming";
 
     private sealed record PayWindow(DateTime Start, DateTime End);
     private sealed record CashFlowEvent(Guid AccountId, DateTime Date, decimal Amount, bool IsIncome);
 
-    public async Task<PaydayPlanResponse> GetPlanAsync(string ownerId, CancellationToken cancellationToken)
+    public async Task<PaydayPlanResponse> GetPlanAsync(string ownerId, PaydayPeriod period, CancellationToken cancellationToken)
     {
         var today = DateTime.UtcNow.Date;
         var accounts = await db.Accounts
@@ -72,15 +110,37 @@ public sealed class PaydayPlanService(FinanceDbContext db) : IPaydayPlanService
 
         var scheduleHorizon = today.AddMonths(PlanningHorizonMonths);
         var payWindows = BuildPayWindows(incomeSchedules, today.AddMonths(-PlanningLookBackMonths), scheduleHorizon);
-        // The current pay period starts at the most recent payday, even if that payday was a few days ago.
-        var payWindow = payWindows.LastOrDefault(window => window.Start <= today)
-            ?? payWindows.FirstOrDefault(window => window.Start >= today);
+        var currentWindow = payWindows.LastOrDefault(window => window.Start <= today);
+        var upcomingWindow = payWindows.FirstOrDefault(window => window.Start > today);
+        var insidePayday = currentWindow is not null && today <= currentWindow.End;
+        // Asked for, or shortly before payday: plan the pay period that starts on the next payday.
+        var isUpcoming = upcomingWindow is not null && period switch
+        {
+            PaydayPeriod.Next => true,
+            PaydayPeriod.Current => false,
+            _ => !insidePayday && (upcomingWindow.Start - today).Days <= UpcomingLookAheadDays
+        };
+
+        // Otherwise the current pay period starts at the most recent payday, even if that was a few days ago.
+        // Before the first payday there is none: asked for this pay period, it runs from today to that
+        // payday (left to choose, the first payday's period is planned instead, as before).
+        var beforeFirstPayday = !isUpcoming &&
+                                period == PaydayPeriod.Current &&
+                                currentWindow is null &&
+                                upcomingWindow is not null;
+        var payWindow = isUpcoming
+            ? upcomingWindow
+            : beforeFirstPayday
+                ? new PayWindow(today, today)
+                : currentWindow ?? payWindows.FirstOrDefault(window => window.Start >= today);
         if (payWindow is null)
         {
             return EmptyPlan();
         }
 
-        var nextPayday = payWindows.FirstOrDefault(window => window.Start > payWindow.Start);
+        var nextPayday = beforeFirstPayday
+            ? upcomingWindow
+            : payWindows.FirstOrDefault(window => window.Start > payWindow.Start);
         if (nextPayday is null)
         {
             return EmptyPlan();
@@ -88,14 +148,34 @@ public sealed class PaydayPlanService(FinanceDbContext db) : IPaydayPlanService
 
         var planStart = payWindow.Start < today ? today : payWindow.Start;
         var planEnd = nextPayday.Start;
+        // This pay period looks on to the end of the next one, so it doesn't move money needed after payday.
+        var eventsEnd = isUpcoming
+            ? planEnd
+            : payWindows.FirstOrDefault(window => window.Start > nextPayday.Start)?.Start ?? planEnd;
         var occurrences = await db.Occurrences
             .Where(occurrence =>
                 accountIds.Contains(occurrence.AccountId) &&
                 occurrence.Date.Date >= today &&
-                occurrence.Date.Date < planEnd)
+                occurrence.Date.Date < eventsEnd)
             .ToListAsync(cancellationToken);
+        // How much linked activity has already paid towards each plan date, whenever it happened (a bill
+        // can be paid early). A plan date only counts what is still to come: a £50 shop linked to a £700
+        // food budget leaves £650. This matches the forecast's rule so the two never disagree.
+        var paidPlanDates = (await db.Occurrences
+                .Where(occurrence =>
+                    accountIds.Contains(occurrence.AccountId) &&
+                    occurrence.ScheduledItemId != null)
+                .Select(occurrence => new { occurrence.ScheduledItemId, occurrence.PlanDate, occurrence.Date, occurrence.Amount })
+                .ToListAsync(cancellationToken))
+            .GroupBy(item => (item.ScheduledItemId!.Value, (item.PlanDate ?? item.Date).Date))
+            .ToDictionary(group => group.Key, group => group.Sum(item => item.Amount));
 
-        var events = BuildEvents(schedules, occurrences, today, planEnd);
+        // A balance checked against the bank today already includes anything planned for today.
+        var checkedToday = accounts
+            .Where(account => account.BalanceCheckedOn?.Date == today)
+            .Select(account => account.Id)
+            .ToHashSet();
+        var events = BuildEvents(schedules, occurrences, paidPlanDates, checkedToday, today, eventsEnd);
         var planEvents = events
             .Where(item => item.Date >= planStart && item.Date < planEnd)
             .ToList();
@@ -121,16 +201,71 @@ public sealed class PaydayPlanService(FinanceDbContext db) : IPaydayPlanService
                 .ToListAsync(cancellationToken))
             .ToDictionary(item => item.AccountId, item => item.Total);
 
+        // Before payday, project each balance to payday: today's balance plus everything due in between.
+        var prePaydayEvents = isUpcoming
+            ? events.Where(item => item.Date < payWindow.Start).ToList()
+            : [];
+        var expectedBalanceByAccount = accounts.ToDictionary(
+            account => account.Id,
+            account => balanceByAccount.GetValueOrDefault(account.Id) +
+                       prePaydayEvents.Where(item => item.AccountId == account.Id).Sum(item => item.Amount));
+        var prePaydayShortfalls = new List<PrePaydayShortfallResponse>();
+        foreach (var account in accounts)
+        {
+            // Only movements before payday count as running short: a balance that is simply below zero
+            // today (a credit card, say) isn't running short and isn't topped up.
+            var (lowest, date) = ComputeRunningMinimum(
+                prePaydayEvents.Where(item => item.AccountId == account.Id),
+                balanceByAccount.GetValueOrDefault(account.Id));
+            if (date is { } lowestDate && lowest < 0m)
+            {
+                prePaydayShortfalls.Add(new PrePaydayShortfallResponse(account.Id, account.Name, lowest, lowestDate));
+            }
+        }
+
+        // A balance already below zero today (a credit card, say) isn't topped up: only an overdraft that
+        // bills before payday add on top of today's balance needs covering, and money coming in only
+        // counts once the balance is back above zero.
+        var fundingBalanceByAccount = accounts.ToDictionary(
+            account => account.Id,
+            account =>
+            {
+                var expected = expectedBalanceByAccount[account.Id];
+                var existingOverdraft = Math.Min(0m, balanceByAccount.GetValueOrDefault(account.Id));
+                return Math.Min(expected - existingOverdraft, Math.Max(expected, 0m));
+            });
+        // The part of today's overdraft left in place (zero or negative).
+        var untoppedOverdraft = accounts.ToDictionary(
+            account => account.Id,
+            account => expectedBalanceByAccount[account.Id] - fundingBalanceByAccount[account.Id]);
+
         // Money already in an account (including salary already received) counts towards its bills.
         var fundsByAccount = accounts.ToDictionary(
             account => account.Id,
-            account => balanceByAccount.GetValueOrDefault(account.Id) + incomeByAccount[account.Id]);
+            account => fundingBalanceByAccount[account.Id] + incomeByAccount[account.Id]);
         var transferNeeded = accounts.ToDictionary(
             account => account.Id,
             account => Math.Max(0m, expensesDueByAccount[account.Id] - fundsByAccount[account.Id]));
+        // This pay period can only give away money the account won't need before the end of the next one:
+        // its lowest projected balance over that time, before any transfers.
         var availableSources = accounts.ToDictionary(
             account => account.Id,
-            account => Math.Max(0m, fundsByAccount[account.Id] - expensesDueByAccount[account.Id]));
+            account =>
+            {
+                // An overdraft that isn't topped up still uses up money arriving in that account.
+                var spare = Math.Max(
+                    0m,
+                    fundsByAccount[account.Id] - expensesDueByAccount[account.Id] + untoppedOverdraft[account.Id]);
+                if (isUpcoming)
+                {
+                    return spare;
+                }
+
+                var (lowest, _) = ComputeRunningMinimum(
+                    events.Where(item => item.AccountId == account.Id),
+                    balanceByAccount.GetValueOrDefault(account.Id));
+                return Math.Min(spare, Math.Max(0m, lowest));
+            });
         var transfers = new List<TransferRecommendationResponse>();
         var unfunded = transferNeeded.ToDictionary(pair => pair.Key, pair => pair.Value);
 
@@ -165,7 +300,23 @@ public sealed class PaydayPlanService(FinanceDbContext db) : IPaydayPlanService
                 account.Name,
                 expensesDueByAccount[account.Id],
                 unfunded[account.Id],
-                incomeAccountIds.Contains(account.Id)))
+                incomeAccountIds.Contains(account.Id),
+                incomeByAccount[account.Id],
+                expectedBalanceByAccount[account.Id],
+                transferNeeded[account.Id],
+                Math.Min(
+                    Math.Max(0m, fundingBalanceByAccount[account.Id]),
+                    Math.Max(0m, expensesDueByAccount[account.Id] - incomeByAccount[account.Id])),
+                account.BalanceCheckedOn,
+                // Where the spare money sits once bills are paid and the suggested transfers are made: what
+                // is really there, and in this pay period never money the account needs after payday.
+                Math.Min(
+                    fundsByAccount[account.Id] - expensesDueByAccount[account.Id] + untoppedOverdraft[account.Id] +
+                        transfers.Where(transfer => transfer.ToAccountId == account.Id).Sum(transfer => transfer.Amount) -
+                        transfers.Where(transfer => transfer.FromAccountId == account.Id).Sum(transfer => transfer.Amount),
+                    availableSources[account.Id]),
+                // Overdraft that bills before payday add to today's balance; it is part of what to send.
+                Math.Max(0m, -fundingBalanceByAccount[account.Id])))
             .ToList();
 
         var currentBalance = balanceByAccount.Values.Sum();
@@ -200,11 +351,39 @@ public sealed class PaydayPlanService(FinanceDbContext db) : IPaydayPlanService
             accountResponses,
             transfers,
             currentBalance,
-            periodIncome - periodExpenses - spent);
+            periodIncome - periodExpenses - spent,
+            isUpcoming ? UpcomingMode : CurrentMode,
+            periodStart,
+            planEnd,
+            prePaydayShortfalls,
+            beforeFirstPayday);
     }
 
     private static PaydayPlanResponse EmptyPlan() =>
-        new(null, null, null, 0m, 0m, 0m, [], []);
+        new(null, null, null, 0m, 0m, 0m, [], [], PrePaydayShortfalls: []);
+
+    /// <summary>
+    /// Walks an account's balance day by day and returns its lowest point below the starting balance and the
+    /// first date it is reached (no date when it never drops below where it started).
+    /// Movements on the same day are netted first, so the order of entries within a day doesn't matter.
+    /// </summary>
+    private static (decimal Lowest, DateTime? Date) ComputeRunningMinimum(IEnumerable<CashFlowEvent> events, decimal start)
+    {
+        var running = start;
+        var lowest = start;
+        DateTime? lowestDate = null;
+        foreach (var day in events.GroupBy(item => item.Date).OrderBy(group => group.Key))
+        {
+            running += day.Sum(item => item.Amount);
+            if (running < lowest)
+            {
+                lowest = running;
+                lowestDate = day.Key;
+            }
+        }
+
+        return (lowest, lowestDate);
+    }
 
     private static List<PayWindow> BuildPayWindows(
         IReadOnlyCollection<ScheduledItem> incomeSchedules,
@@ -303,6 +482,8 @@ public sealed class PaydayPlanService(FinanceDbContext db) : IPaydayPlanService
     private static List<CashFlowEvent> BuildEvents(
         IReadOnlyCollection<ScheduledItem> schedules,
         IReadOnlyCollection<Occurrence> occurrences,
+        IReadOnlyDictionary<(Guid ScheduledItemId, DateTime PlanDate), decimal> paidPlanDates,
+        IReadOnlySet<Guid> checkedOnFromDate,
         DateTime from,
         DateTime to)
     {
@@ -311,9 +492,8 @@ public sealed class PaydayPlanService(FinanceDbContext db) : IPaydayPlanService
         {
             foreach (var date in GetOccurrences(schedule, from, to.AddDays(-1)))
             {
-                if (occurrences.Any(occurrence =>
-                        occurrence.ScheduledItemId == schedule.Id &&
-                        (occurrence.PlanDate ?? occurrence.Date).Date == date))
+                var stillToCome = schedule.Amount - paidPlanDates.GetValueOrDefault((schedule.Id, date));
+                if (stillToCome <= 0m || (date == from && checkedOnFromDate.Contains(schedule.AccountId)))
                 {
                     continue;
                 }
@@ -321,7 +501,7 @@ public sealed class PaydayPlanService(FinanceDbContext db) : IPaydayPlanService
                 events.Add(new CashFlowEvent(
                     schedule.AccountId,
                     date,
-                    schedule.IsIncome ? schedule.Amount : -schedule.Amount,
+                    schedule.IsIncome ? stillToCome : -stillToCome,
                     schedule.IsIncome));
             }
         }
