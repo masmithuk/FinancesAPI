@@ -88,8 +88,24 @@ describe("spareMoneyTip", () => {
     );
   });
 
-  it("has nothing to say once a spending account is set", () => {
-    expect(spareMoneyTip("upcoming", [{ role: "spending", leftAfterTransfers: 700 }])).toBeNull();
+  it("suggests marking a savings account when spare money all goes to spending", () => {
+    expect(
+      spareMoneyTip("upcoming", [
+        { role: "spending", leftAfterTransfers: 700 },
+        { role: "everyday", leftAfterTransfers: 0 },
+      ]),
+    ).toBe(
+      "None of your accounts is marked as savings, so any of them can be used for bills and all spare money goes to your spending account. On the Accounts page, mark your savings account and give it an amount to save each payday.",
+    );
+  });
+
+  it("has nothing to say once spending and savings accounts are set", () => {
+    expect(
+      spareMoneyTip("upcoming", [
+        { role: "spending", leftAfterTransfers: 700 },
+        { role: "savings", leftAfterTransfers: 200 },
+      ]),
+    ).toBeNull();
   });
 
   it("has nothing to say with no spare money, or in this pay period", () => {

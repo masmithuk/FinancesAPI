@@ -25,15 +25,23 @@ export function transferDestination(transfer: PlannedTransfer): string {
     : `${transfer.toPotName} pot in ${transfer.toAccountName}`;
 }
 
-/** In the next pay period, a nudge to choose a spending account when spare money would sit idle. */
+/**
+ * In the next pay period, a nudge to choose a spending account when spare money would sit idle, or to
+ * mark a savings account when none is, so savings aren't used for bills or swept to spending.
+ */
 export function spareMoneyTip(
   mode: "current" | "upcoming",
   accounts: Array<{ role: AccountRole; leftAfterTransfers: number }>,
 ): string | null {
   if (mode !== "upcoming") return null;
-  if (accounts.some((account) => account.role === "spending")) return null;
   if (!accounts.some((account) => account.leftAfterTransfers >= 0.005)) return null;
-  return "Spare money stays where your salary lands. On the Accounts page, choose a spending account and it will be sent there each payday. Mark savings accounts and give pots an amount to save each payday, and they’ll be paid first.";
+  if (!accounts.some((account) => account.role === "spending")) {
+    return "Spare money stays where your salary lands. On the Accounts page, choose a spending account and it will be sent there each payday. Mark savings accounts and give pots an amount to save each payday, and they’ll be paid first.";
+  }
+  if (!accounts.some((account) => account.role === "savings")) {
+    return "None of your accounts is marked as savings, so any of them can be used for bills and all spare money goes to your spending account. On the Accounts page, mark your savings account and give it an amount to save each payday.";
+  }
+  return null;
 }
 
 /** Shown in place of this pay period's totals before the first payday, when they are all £0. */
