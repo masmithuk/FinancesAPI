@@ -42,6 +42,13 @@ public static class AccountsEndpoints
             .WithName("AddBalance")
             .WithTags("Accounts");
 
+        // Record the balance the bank shows: the difference from the app's figure is added as one entry.
+        endpoints.MapPost("/api/accounts/{id}/balances/actual", SetActualBalanceAsync)
+            .RequireAuthorization()
+            .WithName("SetActualBalance")
+            .WithTags("Accounts")
+            .WithSummary("Update an account to the balance shown by the bank");
+
         // List balances for a specific account (caller must own the account).
         endpoints.MapGet("/api/accounts/{id}/balances", ListBalancesAsync)
             .RequireAuthorization()
@@ -94,6 +101,47 @@ public static class AccountsEndpoints
     /// Public representation of a balance returned by the API.
     /// </summary>
     public sealed record BalanceResponse(Guid Id, DateTime Date, decimal Amount, string? Note = null);
+
+    /// <summary>The balance the bank shows; Date defaults to today.</summary>
+    public sealed record SetActualBalanceRequest([Range(typeof(decimal), "-999999999", "999999999")] decimal Amount, DateTime? Date = null);
+
+    /// <summary>The difference recorded (no entry when it is zero) and the date the balance was checked.</summary>
+    public sealed record ActualBalanceResponse(decimal Difference, Guid? BalanceId, DateTime BalanceCheckedOn);
+
+    private const string BankBalanceNote = "Bank balance update";
+
+    /// <summary>
+    /// Brings the account's balance to the figure the bank shows on the given date by adding the
+    /// difference as one entry, and records that the balance was checked. Caller must own the account.
+    /// </summary>
+    private static async Task<IResult> SetActualBalanceAsync(Guid id, SetActualBalanceRequest request, FinanceDbContext db, ClaimsPrincipal user, Finance_API.Services.IUserContextService userContext)
+    {
+        var ownerId = userContext.GetUserId(user);
+        var account = await db.Accounts.FindAsync(id);
+        if (account is null || account.OwnerId != ownerId) return Results.NotFound();
+
+        var date = (request.Date ?? DateTime.UtcNow).Date;
+        if (date > DateTime.UtcNow.Date)
+            return Results.BadRequest(new { errors = new[] { "The bank balance date can't be in the future." } });
+
+        var current = (await db.Balances
+                .Where(b => b.AccountId == id && b.Date <= date.AddDays(1).AddTicks(-1))
+                .Select(b => b.Amount)
+                .ToListAsync())
+            .Sum();
+        var difference = request.Amount - current;
+        Balance? entry = null;
+        if (difference != 0)
+        {
+            entry = new Balance { AccountId = id, Date = date, Amount = difference, Note = BankBalanceNote };
+            db.Balances.Add(entry);
+        }
+
+        account.BalanceCheckedOn = date;
+        await db.SaveChangesAsync();
+
+        return Results.Ok(new ActualBalanceResponse(difference, entry?.Id, date));
+    }
 
     private const int MaxNoteLength = 200;
 

@@ -20,6 +20,11 @@ public sealed class Account
     [Required]
     public string OwnerId { get; set; } = null!;
 
+    /// <summary>
+    /// The date the user last confirmed this account's balance against their bank, if ever.
+    /// </summary>
+    public DateTime? BalanceCheckedOn { get; set; }
+
     public ICollection<Balance> Balances { get; set; } = new List<Balance>();
     public ICollection<Pot> Pots { get; set; } = new List<Pot>();
     public ICollection<ScheduledItem> ScheduledItems { get; set; } = new List<ScheduledItem>();
