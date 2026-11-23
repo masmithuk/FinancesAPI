@@ -21,6 +21,7 @@ export default function AccountsPage({ token }: { token: string }) {
   const [balanceDate, setBalanceDate] = useState(today());
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
+  const [bankAmount, setBankAmount] = useState("");
   const [editingBalance, setEditingBalance] = useState<BalanceEdit | null>(null);
   const [balanceHistoryError, setBalanceHistoryError] = useState("");
   const [error, setError] = useState("");
@@ -129,6 +130,20 @@ export default function AccountsPage({ token }: { token: string }) {
       await loadBalances(selectedId, true);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to add balance.");
+    }
+  }
+
+  async function updateToBankBalance(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedId) return;
+    setError("");
+    try {
+      // No date: the server uses its own today, so a local date ahead of UTC is never rejected as future.
+      await api.setActualBalance(token, selectedId, Number(bankAmount));
+      setBankAmount("");
+      await loadBalances(selectedId, true);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to update the balance.");
     }
   }
 
@@ -283,6 +298,25 @@ export default function AccountsPage({ token }: { token: string }) {
                   />
                   <Button variant="primary">
                     Save balance <span>→</span>
+                  </Button>
+                </form>
+              </Panel>
+              <Panel
+                title="Update to bank balance"
+                subtitle="Type the balance your bank shows today; we’ll record the difference"
+              >
+                <form className="form-grid" onSubmit={updateToBankBalance}>
+                  <TextField
+                    label="Amount (£)"
+                    type="number"
+                    step="0.01"
+                    required
+                    value={bankAmount}
+                    onChange={setBankAmount}
+                    placeholder="0.00"
+                  />
+                  <Button variant="primary">
+                    Update balance <span>→</span>
                   </Button>
                 </form>
               </Panel>

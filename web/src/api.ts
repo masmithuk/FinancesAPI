@@ -124,12 +124,28 @@ export interface PaydayPlan {
   discretionaryIncome: number;
   currentBalance?: number;
   leftToSpend?: number;
+  /** "upcoming" shortly before payday, when the plan covers the pay period starting on that payday. */
+  mode: "current" | "upcoming";
+  periodStartDate: string | null;
+  /** The following payday; the period runs up to, not including, this date. */
+  periodEndDate: string | null;
+  prePaydayShortfalls: Array<{
+    accountId: string;
+    accountName: string;
+    lowestBalance: number;
+    date: string;
+  }>;
   accounts: Array<{
     accountId: string;
     accountName: string;
     expensesDue: number;
     unfundedShortfall: number;
     receivesPaydayIncome: boolean;
+    incomeIn: number;
+    expectedBalance: number;
+    toSend: number;
+    fromExisting: number;
+    balanceCheckedOn: string | null;
   }>;
   transfers: Array<{
     fromAccountId: string;
@@ -250,6 +266,13 @@ export const api = {
     request<Array<{ date: string; cumulativeAmount: number; change?: number; entries?: number }>>(
       `/api/accounts/${accountId}/running-balances`,
       token,
+    ),
+  /** Brings an account to the balance the bank shows; the server records the difference. */
+  setActualBalance: (token: string, accountId: string, amount: number, date?: string) =>
+    post<{ difference: number; balanceId: string | null; balanceCheckedOn: string }>(
+      `/api/accounts/${accountId}/balances/actual`,
+      token,
+      { amount, date },
     ),
   createBalance: (token: string, accountId: string, date: string, amount: number, note?: string) =>
     post<Balance>(`/api/accounts/${accountId}/balances`, token, {

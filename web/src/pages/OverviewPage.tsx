@@ -5,6 +5,23 @@ import { buildShareSummary, whatsAppShareUrl } from "../lib/shareSummary";
 import { Button } from "../shared/Controls";
 import { EmptyState, ErrorMessage, PageHeading, Panel } from "../shared/Ui";
 import type { Page } from "../types";
+import { AccountBreakdown, BalanceReminder, PrePaydayWarning } from "./PaydayBreakdown";
+
+/** Rejects a plan from an API that predates the fields this page relies on. */
+function checkPlanShape(plan: PaydayPlan) {
+  if (
+    !Number.isFinite(plan.discretionaryIncome) ||
+    plan.accounts.some(
+      (account) => !Number.isFinite(account.expensesDue) || !Number.isFinite(account.toSend),
+    )
+  ) {
+    throw new ApiError(
+      "The payday planner API is out of date. Restart the Finance API, then refresh.",
+      0,
+    );
+  }
+  return plan;
+}
 
 export default function OverviewPage({
   token,
@@ -46,21 +63,17 @@ export default function OverviewPage({
         .catch((reason: unknown) => reportError(reason, "setup status")),
       api
         .paydayPlan(token)
-        .then((plan) => {
-          if (
-            !Number.isFinite(plan.discretionaryIncome) ||
-            plan.accounts.some((account) => !Number.isFinite(account.expensesDue))
-          ) {
-            throw new ApiError(
-              "The payday planner API is out of date. Restart the Finance API, then refresh.",
-              0,
-            );
-          }
-          setPaydayPlan(plan);
-        })
+        .then((plan) => setPaydayPlan(checkPlanShape(plan)))
         .catch((reason: unknown) => reportError(reason, "payday plan")),
     ]).finally(() => setLoading(false));
   }, [token]);
+
+  // After a balance is brought up to date, recalculate the transfers and the account totals it affects.
+  async function refreshPaydayPlan() {
+    const [plan, overview] = await Promise.all([api.paydayPlan(token), api.overview(token)]);
+    setPaydayPlan(checkPlanShape(plan));
+    setSummary(overview);
+  }
 
   const discretionarySuggestions = (() => {
     let remaining = Math.max(0, paydayPlan?.discretionaryIncome ?? 0);
@@ -119,13 +132,19 @@ export default function OverviewPage({
             className="payday-panel mb-5"
             title="Transfers to make"
             subtitle={
-              paydayPlan?.paydayStartDate && paydayPlan.nextPaydayDate
-                ? `Payday ${dateLabel(paydayPlan.paydayStartDate)}${paydayPlan.paydayWindowEndDate !== paydayPlan.paydayStartDate ? `–${dateLabel(paydayPlan.paydayWindowEndDate!)}` : ""}`
+              paydayPlan?.periodStartDate && paydayPlan.periodEndDate
+                ? `${paydayPlan.mode === "upcoming" ? "Upcoming payday" : "This pay period"} · Payday ${dateLabel(paydayPlan.periodStartDate)} → ${dateLabel(paydayPlan.periodEndDate)}`
                 : "Add a recurring income schedule to calculate your payday plan."
             }
           >
             {paydayPlan?.paydayStartDate ? (
               <div className="grid gap-5">
+                <BalanceReminder
+                  token={token}
+                  accounts={paydayPlan.accounts}
+                  onUpdated={refreshPaydayPlan}
+                />
+                <PrePaydayWarning shortfalls={paydayPlan.prePaydayShortfalls} />
                 <div className="grid gap-3 md:grid-cols-3">
                   <div className="rounded-lg bg-muted/60 p-3">
                     <span className="payday-summary-label text-xs text-muted-foreground">
@@ -186,25 +205,13 @@ export default function OverviewPage({
                 )}
                 <div className="grid gap-2">
                   <h3 className="text-sm font-semibold">
-                    Expenses by account, and what remains from today until payday
+                    How each account’s transfer is worked out
                   </h3>
-                  <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-4 border-b pb-2 text-xs text-muted-foreground">
-                    <span>Account</span>
-                    <span>Total expenditure</span>
-                    <span>Remaining after today</span>
-                  </div>
-                  {paydayPlan.accounts.map((account) => (
-                    <div
-                      className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-4 border-b py-2 text-sm last:border-0"
-                      key={account.accountId}
-                    >
-                      <span>{account.accountName}</span>
-                      <span>
-                        {account.expensesDue === 0 ? money(0) : money(-account.expensesDue)}
-                      </span>
-                      <strong>{money(account.expensesDue)}</strong>
-                    </div>
-                  ))}
+                  {paydayPlan.accounts
+                    .filter((account) => account.expensesDue > 0)
+                    .map((account) => (
+                      <AccountBreakdown key={account.accountId} account={account} />
+                    ))}
                 </div>
               </div>
             ) : (

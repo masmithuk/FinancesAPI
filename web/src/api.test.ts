@@ -163,4 +163,27 @@ describe("api endpoints", () => {
     expect(fetchMock.mock.calls[1][1].method).toBe("PUT");
     expect(JSON.parse(fetchMock.mock.calls[1][1].body).note).toBe("Rent");
   });
+
+  it("posts the bank's figure to the actual balance endpoint", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(
+          JSON.stringify({ difference: -25, balanceId: "bal", balanceCheckedOn: "2026-11-23" }),
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    expect(await api.setActualBalance("tok", "acc", 95, "2026-11-23")).toEqual({
+      difference: -25,
+      balanceId: "bal",
+      balanceCheckedOn: "2026-11-23",
+    });
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/accounts/acc/balances/actual");
+    expect(fetchMock.mock.calls[0][1].method).toBe("POST");
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      amount: 95,
+      date: "2026-11-23",
+    });
+  });
 });
