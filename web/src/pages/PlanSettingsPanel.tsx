@@ -68,7 +68,7 @@ export function PlanSettingsPanel({
             min="0"
             value={saveAmount}
             onChange={setSaveAmount}
-            placeholder="0.00"
+            placeholder="Leave blank to save 10% of your pay"
           />
         )}
         <Button variant="primary" disabled={saving}>

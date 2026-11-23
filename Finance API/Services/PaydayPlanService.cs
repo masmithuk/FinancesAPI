@@ -103,6 +103,9 @@ public sealed class PaydayPlanService(FinanceDbContext db) : IPaydayPlanService
     // The note POST /api/transfers puts on the receiving account's balance entry.
     private const string TransferFromNotePrefix = "Transfer from ";
 
+    /// <summary>The share of the pay suggested for savings accounts that have no amount of their own.</summary>
+    public const decimal DefaultSavingsShare = 0.10m;
+
     private sealed record PayWindow(DateTime Start, DateTime End);
     private sealed record CashFlowEvent(Guid AccountId, DateTime Date, decimal Amount, bool IsIncome);
 
@@ -352,7 +355,8 @@ public sealed class PaydayPlanService(FinanceDbContext db) : IPaydayPlanService
                 .GroupBy(balance => balance.AccountId)
                 .ToDictionary(group => group.Key, group => group.Sum(balance => balance.Amount));
             AddSpareMoneyTransfers(
-                accounts, pots, paydaysFromThisOne, paidIntoPots, paidIntoSavings, availableSources, transfers);
+                accounts, pots, paydaysFromThisOne, paidIntoPots, paidIntoSavings, incomeByAccount.Values.Sum(),
+                availableSources, transfers);
         }
 
         var accountResponses = accounts
@@ -434,6 +438,7 @@ public sealed class PaydayPlanService(FinanceDbContext db) : IPaydayPlanService
         IReadOnlyList<PayWindow> paydaysFromThisOne,
         IReadOnlyDictionary<Guid, decimal> paidIntoPots,
         IReadOnlyDictionary<Guid, decimal> paidIntoSavings,
+        decimal payThisPeriod,
         Dictionary<Guid, decimal> availableSources,
         List<TransferRecommendationResponse> transfers)
     {
@@ -470,11 +475,17 @@ public sealed class PaydayPlanService(FinanceDbContext db) : IPaydayPlanService
             }
         }
 
-        foreach (var savings in accounts.Where(account =>
-                     account.Role == AccountRoles.Savings && account.SavePerPayday > 0))
+        // A savings account with no amount of its own shares a tenth of the pay with the others like it.
+        var savingsAccounts = accounts.Where(account => account.Role == AccountRoles.Savings).ToList();
+        var withoutAmount = savingsAccounts.Count(account => !(account.SavePerPayday > 0));
+        var defaultAmount = withoutAmount == 0
+            ? 0m
+            : Math.Round(payThisPeriod * DefaultSavingsShare / withoutAmount, 2, MidpointRounding.ToZero);
+        foreach (var savings in savingsAccounts)
         {
+            var amountForThisPayday = savings.SavePerPayday > 0 ? savings.SavePerPayday.Value : defaultAmount;
             var before = transfers.Count;
-            Send(savings.SavePerPayday!.Value - paidIntoSavings.GetValueOrDefault(savings.Id), null, savings.Id, (source, amount) => new TransferRecommendationResponse(
+            Send(amountForThisPayday - paidIntoSavings.GetValueOrDefault(savings.Id), null, savings.Id, (source, amount) => new TransferRecommendationResponse(
                 source.Id, source.Name, savings.Id, savings.Name, amount, TransferKinds.Savings));
             availableSources[savings.Id] += transfers.Skip(before).Sum(transfer => transfer.Amount);
         }

@@ -137,6 +137,53 @@ public sealed class PaydayPlanSavingsTests
     }
 
     [Fact]
+    public async Task Savings_Account_With_No_Amount_Gets_A_Tenth_Of_The_Pay()
+    {
+        // £1,000 paid in at this payday, so £100 is suggested for savings and £600 is left to spend.
+        var (factory, client, connection) = await StartAsync("savings-default-user");
+        await using var _ = connection;
+        using var __ = factory;
+        var seed = await SeedAsync(factory, "savings-default-user", (db, owner, _, _, ids) =>
+        {
+            AddAccount(db, owner, ids, "Spending", AccountRoles.Spending);
+            AddAccount(db, owner, ids, "Savings", AccountRoles.Savings);
+        });
+
+        var plan = await GetPlanAsync(client, "next");
+
+        var savings = TransferOf(plan, "savings");
+        Assert.Equal(seed.IncomeId, savings.GetProperty("fromAccountId").GetGuid());
+        Assert.Equal(seed.Ids["Savings"], savings.GetProperty("toAccountId").GetGuid());
+        Assert.Equal(100m, savings.GetProperty("amount").GetDecimal());
+        Assert.Equal(600m, TransferOf(plan, "spending").GetProperty("amount").GetDecimal());
+    }
+
+    [Fact]
+    public async Task Savings_Accounts_With_No_Amount_Share_The_Tenth()
+    {
+        var (factory, client, connection) = await StartAsync("savings-share-user");
+        await using var _ = connection;
+        using var __ = factory;
+        var seed = await SeedAsync(factory, "savings-share-user", (db, owner, _, _, ids) =>
+        {
+            AddAccount(db, owner, ids, "Spending", AccountRoles.Spending);
+            AddAccount(db, owner, ids, "Savings A", AccountRoles.Savings);
+            AddAccount(db, owner, ids, "Savings B", AccountRoles.Savings);
+            AddAccount(db, owner, ids, "Savings C", AccountRoles.Savings, savePerPayday: 200m);
+        });
+
+        var plan = await GetPlanAsync(client, "next");
+
+        decimal SentTo(string name) => Transfers(plan)
+            .Where(transfer => transfer.GetProperty("toAccountId").GetGuid() == seed.Ids[name])
+            .Sum(transfer => transfer.GetProperty("amount").GetDecimal());
+        Assert.Equal(50m, SentTo("Savings A"));
+        Assert.Equal(50m, SentTo("Savings B"));
+        Assert.Equal(200m, SentTo("Savings C"));
+        Assert.Equal(400m, TransferOf(plan, "spending").GetProperty("amount").GetDecimal());
+    }
+
+    [Fact]
     public async Task Savings_Are_Capped_At_The_Spare_Money()
     {
         var (factory, client, connection) = await StartAsync("savings-cap-user");
@@ -172,7 +219,7 @@ public sealed class PaydayPlanSavingsTests
         Assert.Equal(seed.IncomeId, TransferOf(plan, "bills").GetProperty("fromAccountId").GetGuid());
         Assert.DoesNotContain(Transfers(plan), transfer =>
             transfer.GetProperty("fromAccountId").GetGuid() == seed.Ids["A Savings"]);
-        Assert.Equal(700m, TransferOf(plan, "spending").GetProperty("amount").GetDecimal());
+        Assert.Equal(600m, TransferOf(plan, "spending").GetProperty("amount").GetDecimal());
     }
 
     [Fact]
