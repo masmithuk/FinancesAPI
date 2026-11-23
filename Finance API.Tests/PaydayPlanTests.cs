@@ -308,15 +308,21 @@ public sealed class PaydayPlanTests
         decimal billsBalance,
         decimal? oneOffExpenseTomorrow = null,
         int salaryStartOffsetDays = -11,
-        DateTime? billsCheckedOn = null)
+        DateTime? billsCheckedOn = null,
+        decimal incomeBalance = 0m,
+        DateTime? incomeCheckedOn = null)
     {
         var today = DateTime.UtcNow.Date;
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<FinanceDbContext>();
         var ownerId = await db.Users.Where(user => user.UserName == userName).Select(user => user.Id).SingleAsync();
-        var income = new Account { Name = "Income", OwnerId = ownerId };
+        var income = new Account { Name = "Income", OwnerId = ownerId, BalanceCheckedOn = incomeCheckedOn };
         var bills = new Account { Name = "Bills", OwnerId = ownerId, BalanceCheckedOn = billsCheckedOn };
         db.Accounts.AddRange(income, bills);
+        if (incomeBalance != 0m)
+        {
+            db.Balances.Add(new Balance { Account = income, Date = today, Amount = incomeBalance });
+        }
         if (billsBalance != 0m)
         {
             db.Balances.Add(new Balance { Account = bills, Date = today, Amount = billsBalance });
@@ -357,9 +363,9 @@ public sealed class PaydayPlanTests
         return new UpcomingSeed(income.Id, bills.Id);
     }
 
-    private static async Task<JsonElement> GetPlanAsync(HttpClient client)
+    private static async Task<JsonElement> GetPlanAsync(HttpClient client, string? period = null)
     {
-        var response = await client.GetAsync("/api/payday-plan");
+        var response = await client.GetAsync(period is null ? "/api/payday-plan" : $"/api/payday-plan?period={period}");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         return await response.Content.ReadFromJsonAsync<JsonElement>();
     }
@@ -553,6 +559,96 @@ public sealed class PaydayPlanTests
         var bills2 = AccountIn(plan, billsId);
         Assert.Equal(50m, bills2.GetProperty("expectedBalance").GetDecimal());
         Assert.Empty(plan.GetProperty("prePaydayShortfalls").EnumerateArray());
+    }
+
+    [Fact]
+    public async Task Period_Current_Close_To_Payday_Plans_Until_Payday()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        using var factory = new FinanceApiFactory(connection);
+        using var client = await CreateAuthenticatedClient(factory, "period-current-user");
+        var seed = await SeedUpcomingAsync(factory, "period-current-user", 100m, oneOffExpenseTomorrow: 50m);
+        var today = DateTime.UtcNow.Date;
+
+        var plan = await GetPlanAsync(client, "current");
+
+        Assert.Equal("current", plan.GetProperty("mode").GetString());
+        Assert.Equal(today.AddDays(3), plan.GetProperty("periodEndDate").GetDateTime().Date);
+        var bills = AccountIn(plan, seed.BillsId);
+        Assert.Equal(50m, bills.GetProperty("expensesDue").GetDecimal());
+        Assert.Equal(100m, bills.GetProperty("expectedBalance").GetDecimal());
+    }
+
+    [Fact]
+    public async Task Period_Next_Far_From_Payday_Plans_Next_Period()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        using var factory = new FinanceApiFactory(connection);
+        using var client = await CreateAuthenticatedClient(factory, "period-next-user");
+        // Payday is 12 days away; rent on day 10 falls before it.
+        var seed = await SeedUpcomingAsync(factory, "period-next-user", 120m, salaryStartOffsetDays: -2);
+        var today = DateTime.UtcNow.Date;
+
+        var plan = await GetPlanAsync(client, "next");
+
+        Assert.Equal("upcoming", plan.GetProperty("mode").GetString());
+        Assert.Equal(today.AddDays(12), plan.GetProperty("periodStartDate").GetDateTime().Date);
+        Assert.Equal(today.AddDays(26), plan.GetProperty("periodEndDate").GetDateTime().Date);
+        var bills = AccountIn(plan, seed.BillsId);
+        Assert.Equal(-180m, bills.GetProperty("expectedBalance").GetDecimal());
+        Assert.Equal(0m, bills.GetProperty("expensesDue").GetDecimal());
+        Assert.Equal(180m, bills.GetProperty("toSend").GetDecimal());
+    }
+
+    [Fact]
+    public async Task Unknown_Period_Returns_BadRequest()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        using var factory = new FinanceApiFactory(connection);
+        using var client = await CreateAuthenticatedClient(factory, "period-bad-user");
+
+        var response = await client.GetAsync("/api/payday-plan?period=someday");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task LeftAfterTransfers_Shows_Where_Money_Sits()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        using var factory = new FinanceApiFactory(connection);
+        using var client = await CreateAuthenticatedClient(factory, "left-after-user");
+        var seed = await SeedUpcomingAsync(factory, "left-after-user", 100m);
+
+        var plan = await GetPlanAsync(client, "next");
+
+        Assert.Equal(800m, AccountIn(plan, seed.IncomeId).GetProperty("leftAfterTransfers").GetDecimal());
+        Assert.Equal(0m, AccountIn(plan, seed.BillsId).GetProperty("leftAfterTransfers").GetDecimal());
+    }
+
+    [Fact]
+    public async Task Checked_Today_Treats_Todays_Planned_Income_As_Already_In_Balance()
+    {
+        // Payday is today; the user typed the bank balance after the salary landed.
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        using var factory = new FinanceApiFactory(connection);
+        using var client = await CreateAuthenticatedClient(factory, "checked-payday-user");
+        var today = DateTime.UtcNow.Date;
+        var seed = await SeedUpcomingAsync(
+            factory, "checked-payday-user", 0m, salaryStartOffsetDays: 0,
+            incomeBalance: 1000m, incomeCheckedOn: today);
+
+        var plan = await GetPlanAsync(client, "current");
+
+        var income = AccountIn(plan, seed.IncomeId);
+        Assert.Equal(0m, income.GetProperty("incomeIn").GetDecimal());
+        Assert.Equal(700m, income.GetProperty("leftAfterTransfers").GetDecimal());
+        Assert.Equal(300m, Assert.Single(plan.GetProperty("transfers").EnumerateArray()).GetProperty("amount").GetDecimal());
     }
 
     [Fact]
