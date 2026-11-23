@@ -1,0 +1,30 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "verify-api",
+      "runtimeExecutable": "dotnet",
+      "runtimeArgs": [
+        "run",
+        "--project",
+        "Finance API/Finance API.csproj",
+        "--no-launch-profile",
+        "--artifacts-path",
+        ".verify/build",
+        "--",
+        "--urls=http://localhost:5206",
+        "--environment=Development",
+        "--ConnectionStrings:Finance=Data Source=../.verify/data/verify.db"
+      ],
+      "port": 5206,
+      "autoPort": false
+    },
+    {
+      "name": "verify-web",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "cd web && npx vp dev --config ../.claude/skills/verify-northstar/vite.verify.config.mts"],
+      "port": 5274,
+      "autoPort": false
+    }
+  ]
+}
