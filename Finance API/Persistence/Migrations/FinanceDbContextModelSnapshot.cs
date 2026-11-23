@@ -98,6 +98,14 @@ namespace Finance_API.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal?>("SavePerPayday")
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
                     b.ToTable("Accounts");
@@ -214,6 +222,9 @@ namespace Finance_API.Persistence.Migrations
 
                     b.Property<string>("Name")
                         .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal?>("SavePerPayday")
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");

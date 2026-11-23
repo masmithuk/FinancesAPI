@@ -1,6 +1,27 @@
+/** How the payday plan treats an account. */
+export type AccountRole = "everyday" | "spending" | "savings";
+
 export interface Account {
   id: string;
   name: string;
+  role: AccountRole;
+  /** For a savings account, what to pay in each payday. */
+  savePerPayday: number | null;
+}
+
+/** What a suggested transfer is for: bills, a savings account, a pot, or spare money to spend. */
+export type TransferKind = "bills" | "savings" | "pot" | "spending";
+
+export interface PlannedTransfer {
+  fromAccountId: string;
+  fromAccountName: string;
+  toAccountId: string;
+  toAccountName: string;
+  amount: number;
+  kind: TransferKind;
+  /** Set for a pot payment: the pot, which sits in toAccountId. */
+  toPotId: string | null;
+  toPotName: string | null;
 }
 
 export interface Balance {
@@ -19,6 +40,8 @@ export interface Pot {
   id: string;
   name: string;
   accountId: string;
+  /** What to pay in each payday; without it a goal with a due date sets the amount. */
+  savePerPayday: number | null;
 }
 
 export interface Goal {
@@ -152,14 +175,9 @@ export interface PaydayPlan {
     leftAfterTransfers: number;
     /** Overdraft that bills before payday add to today's balance; part of what to send. */
     overdraftToCover: number;
+    role: AccountRole;
   }>;
-  transfers: Array<{
-    fromAccountId: string;
-    fromAccountName: string;
-    toAccountId: string;
-    toAccountName: string;
-    amount: number;
-  }>;
+  transfers: PlannedTransfer[];
 }
 
 export interface Forecast {
@@ -261,6 +279,16 @@ export const api = {
   me: (token: string) => request<{ userId: string; userName: string | null }>("/api/me", token),
   accounts: (token: string) => request<Account[]>("/api/accounts", token),
   createAccount: (token: string, name: string) => post<Account>("/api/accounts", token, { name }),
+  setAccountPlanSettings: (
+    token: string,
+    accountId: string,
+    role: AccountRole,
+    savePerPayday: number | null,
+  ) =>
+    request<Account>(`/api/accounts/${accountId}/plan-settings`, token, {
+      method: "PUT",
+      body: JSON.stringify({ role, savePerPayday }),
+    }),
   balances: (token: string, accountId: string) =>
     request<Balance[]>(`/api/accounts/${accountId}/balances`, token),
   balanceHistory: (token: string, accountId: string, skip: number, take: number) =>
@@ -316,6 +344,11 @@ export const api = {
     request<Pot>(`/api/accounts/${accountId}/pots/${potId}`, token, {
       method: "PUT",
       body: JSON.stringify({ name, accountId: targetAccountId }),
+    }),
+  setPotSaving: (token: string, potId: string, savePerPayday: number | null) =>
+    request<Pot>(`/api/pots/${potId}/saving`, token, {
+      method: "PUT",
+      body: JSON.stringify({ savePerPayday }),
     }),
   deletePot: (token: string, accountId: string, potId: string) =>
     request<void>(`/api/accounts/${accountId}/pots/${potId}`, token, { method: "DELETE" }),

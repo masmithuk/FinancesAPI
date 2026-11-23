@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { api, type Account, type Goal, type Pot, type PotContribution } from "../api";
 import NameCreateForm from "../NameCreateForm";
 import { Card } from "@/components/ui/card";
 import { Button, SelectField, TextField } from "../shared/Controls";
 import { dateLabel, money } from "../shared/format";
 import { ErrorMessage, PageHeading } from "../shared/Ui";
+import { parseSaveAmount } from "../lib/accountRoles";
 
 type PotEdit = { id: string; sourceAccountId: string; accountId: string; name: string };
 type GoalEdit = { potId: string; id: string; targetAmount: string; dueDate: string };
@@ -341,6 +342,9 @@ export default function PotsPage({ token }: { token: string }) {
               onSaveGoal={saveGoal}
               onCancelGoalEdit={() => setEditingGoal(null)}
               onDeleteGoal={(goal) => deleteGoal(pot.id, goal)}
+              savingForm={
+                <PotSavingForm token={token} pot={pot} onSaved={() => loadPots(accountId)} />
+              }
             />
           ))}
           {!pots.length && (
@@ -390,7 +394,9 @@ function PotCard({
   onSaveGoal,
   onCancelGoalEdit,
   onDeleteGoal,
+  savingForm,
 }: {
+  savingForm: ReactNode;
   pot: Pot;
   goals: Goal[];
   contributions: PotContribution[];
@@ -476,6 +482,7 @@ function PotCard({
         <span className="text-sm text-muted-foreground">Saved in this pot</span>
         <strong className="text-lg">{money(totalContributed)}</strong>
       </div>
+      {savingForm}
       {goals.length > 0 && (
         <div className="goal-list">
           {goals.map((goal) => (
@@ -695,5 +702,58 @@ function PotCard({
         </Button>
       </form>
     </Card>
+  );
+}
+
+/** How much the payday plan pays into a pot each payday; blank leaves it to the goal's target date. */
+function PotSavingForm({
+  token,
+  pot,
+  onSaved,
+}: {
+  token: string;
+  pot: Pot;
+  onSaved: () => Promise<void>;
+}) {
+  const [amount, setAmount] = useState(pot.savePerPayday?.toString() ?? "");
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState("");
+
+  async function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (saving) return;
+    setSaving(true);
+    setMessage("");
+    try {
+      await api.setPotSaving(token, pot.id, parseSaveAmount(amount));
+      await onSaved();
+      setMessage("Saved.");
+    } catch (reason) {
+      setMessage(reason instanceof Error ? reason.message : "Unable to save.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <form className="grid gap-2" onSubmit={save}>
+      <TextField
+        label="Save each payday (£)"
+        type="number"
+        step="0.01"
+        min="0"
+        value={amount}
+        onChange={setAmount}
+        placeholder="Leave blank to spread a dated goal"
+      />
+      <p className="text-xs text-muted-foreground">
+        Suggested in your next pay period’s transfers. Left blank, a goal with a target date is
+        spread evenly over the paydays before it.
+      </p>
+      <Button variant="outline" size="small" disabled={saving}>
+        Save amount
+      </Button>
+      {message && <p className="text-sm text-muted-foreground">{message}</p>}
+    </form>
   );
 }

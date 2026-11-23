@@ -1,4 +1,40 @@
+import type { AccountRole, PlannedTransfer, TransferKind } from "../api";
 import { dateLabel, money } from "../shared/format";
+
+const TRANSFER_GROUPS: Array<{ title: string; kinds: TransferKind[] }> = [
+  { title: "For bills", kinds: ["bills"] },
+  { title: "Put aside for savings", kinds: ["savings", "pot"] },
+  { title: "Spending money", kinds: ["spending"] },
+];
+
+/** Suggested transfers grouped by what they are for, in the order to make them; empty groups are left out. */
+export function transferGroups(
+  transfers: PlannedTransfer[],
+): Array<{ title: string; transfers: PlannedTransfer[] }> {
+  return TRANSFER_GROUPS.map((group) => ({
+    title: group.title,
+    transfers: transfers.filter((transfer) => group.kinds.includes(transfer.kind)),
+  })).filter((group) => group.transfers.length > 0);
+}
+
+/** Where a transfer goes: the account, or the pot (and its account when the money comes from elsewhere). */
+export function transferDestination(transfer: PlannedTransfer): string {
+  if (!transfer.toPotName) return transfer.toAccountName;
+  return transfer.toAccountId === transfer.fromAccountId
+    ? `${transfer.toPotName} pot`
+    : `${transfer.toPotName} pot in ${transfer.toAccountName}`;
+}
+
+/** In the next pay period, a nudge to choose a spending account when spare money would sit idle. */
+export function spareMoneyTip(
+  mode: "current" | "upcoming",
+  accounts: Array<{ role: AccountRole; leftAfterTransfers: number }>,
+): string | null {
+  if (mode !== "upcoming") return null;
+  if (accounts.some((account) => account.role === "spending")) return null;
+  if (!accounts.some((account) => account.leftAfterTransfers >= 0.005)) return null;
+  return "Spare money stays where your salary lands. On the Accounts page, choose a spending account and it will be sent there each payday. Mark savings accounts and give pots an amount to save each payday, and they’ll be paid first.";
+}
 
 /** Shown in place of this pay period's totals before the first payday, when they are all £0. */
 export function noPaydayYetMessage(firstPayday: string): string {

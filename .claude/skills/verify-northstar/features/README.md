@@ -53,3 +53,4 @@ Each feature file starts with an H1 title and one paragraph describing the user-
 - [Payday plan](./payday-plan.md) covers the two pay-period tabs, recommended transfers, the per-account breakdown, the pre-payday warning and where money sits after transfers.
 - [Update to bank balance](./bank-balance.md) covers the Overview reminder and the Accounts page field.
 - [Mark a transfer as done](./mark-transfer-done.md) covers recording a recommended transfer and the plan recalculating.
+- [Spare money](./spare-money.md) covers spending and savings accounts, pot amounts per payday, the grouped transfers and marking them done (proven 2026-11-23).

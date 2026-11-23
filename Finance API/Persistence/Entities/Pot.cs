@@ -19,6 +19,12 @@ public sealed class Pot
 
     public Account? Account { get; set; }
 
+    /// <summary>
+    /// How much to pay into this pot each payday, if set. Without it, a goal with a due date is spread
+    /// evenly over the paydays left before that date.
+    /// </summary>
+    public decimal? SavePerPayday { get; set; }
+
     public ICollection<Goal> Goals { get; set; } = new List<Goal>();
 
     public ICollection<PotContribution> Contributions { get; set; } = new List<PotContribution>();

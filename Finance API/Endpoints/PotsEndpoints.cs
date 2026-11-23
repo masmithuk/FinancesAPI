@@ -54,6 +54,12 @@ public static class PotsEndpoints
             .WithTags("Pots")
             .WithSummary("Delete a pot and its goals");
 
+        endpoints.MapPut("/api/pots/{potId}/saving", SetPotSavingAsync)
+            .RequireAuthorization()
+            .WithName("SetPotSaving")
+            .WithTags("Pots")
+            .WithSummary("Set how much to pay into a pot each payday");
+
         endpoints.MapPost("/api/pots/{potId}/goals", CreateGoalAsync)
             .RequireAuthorization()
             .WithName("CreateGoal")
@@ -120,7 +126,10 @@ public static class PotsEndpoints
     /// <summary>
     /// Public representation of a pot returned by the API.
     /// </summary>
-    public sealed record PotResponse(Guid Id, string Name, Guid AccountId);
+    public sealed record PotResponse(Guid Id, string Name, Guid AccountId, decimal? SavePerPayday = null);
+
+    /// <summary>How much to pay into a pot each payday; null to leave it to the pot's goal.</summary>
+    public sealed record PotSavingRequest(decimal? SavePerPayday);
 
     /// <summary>
     /// Request payload to create a simple savings goal attached to a pot.
@@ -171,7 +180,7 @@ public static class PotsEndpoints
         db.Pots.Add(pot);
         await db.SaveChangesAsync();
 
-        return Results.Created($"/api/accounts/{accountId}/pots/{pot.Id}", new PotResponse(pot.Id, pot.Name, pot.AccountId));
+        return Results.Created($"/api/accounts/{accountId}/pots/{pot.Id}", new PotResponse(pot.Id, pot.Name, pot.AccountId, pot.SavePerPayday));
     }
 
     /// <summary>
@@ -185,7 +194,7 @@ public static class PotsEndpoints
 
         var pots = await db.Pots
             .Where(p => p.AccountId == accountId)
-            .Select(p => new PotResponse(p.Id, p.Name, p.AccountId))
+            .Select(p => new PotResponse(p.Id, p.Name, p.AccountId, p.SavePerPayday))
             .ToListAsync();
 
         return Results.Ok(pots);
@@ -203,7 +212,7 @@ public static class PotsEndpoints
         var pot = await db.Pots.FindAsync(id);
         if (pot is null || pot.AccountId != accountId) return Results.NotFound();
 
-        return Results.Ok(new PotResponse(pot.Id, pot.Name, pot.AccountId));
+        return Results.Ok(new PotResponse(pot.Id, pot.Name, pot.AccountId, pot.SavePerPayday));
     }
 
     private static async Task<IResult> UpdatePotAsync(
@@ -234,7 +243,31 @@ public static class PotsEndpoints
         pot.AccountId = targetAccount.Id;
         await db.SaveChangesAsync(cancellationToken);
 
-        return Results.Ok(new PotResponse(pot.Id, pot.Name, pot.AccountId));
+        return Results.Ok(new PotResponse(pot.Id, pot.Name, pot.AccountId, pot.SavePerPayday));
+    }
+
+    /// <summary>Sets or clears how much the payday plan pays into a pot. Caller must own the pot.</summary>
+    private static async Task<IResult> SetPotSavingAsync(
+        Guid potId,
+        PotSavingRequest request,
+        FinanceDbContext db,
+        ClaimsPrincipal user,
+        Finance_API.Services.IUserContextService userContext,
+        CancellationToken cancellationToken)
+    {
+        var ownerId = userContext.GetUserId(user);
+        if (string.IsNullOrEmpty(ownerId)) return Results.Unauthorized();
+        if (request.SavePerPayday is < 0 or > 999999999)
+            return Results.BadRequest(new { detail = "The amount to save each payday can't be negative." });
+
+        var pot = await db.Pots
+            .Include(item => item.Account)
+            .FirstOrDefaultAsync(item => item.Id == potId, cancellationToken);
+        if (pot?.Account is null || pot.Account.OwnerId != ownerId) return Results.NotFound();
+
+        pot.SavePerPayday = request.SavePerPayday > 0 ? request.SavePerPayday : null;
+        await db.SaveChangesAsync(cancellationToken);
+        return Results.Ok(new PotResponse(pot.Id, pot.Name, pot.AccountId, pot.SavePerPayday));
     }
 
     private static async Task<IResult> DeletePotAsync(
