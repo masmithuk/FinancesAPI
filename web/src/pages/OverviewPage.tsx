@@ -6,6 +6,7 @@ import { Button } from "../shared/Controls";
 import { EmptyState, ErrorMessage, PageHeading, Panel } from "../shared/Ui";
 import type { Page } from "../types";
 import { AccountBreakdown, BalanceReminder, PrePaydayWarning } from "./PaydayBreakdown";
+import { showsBreakdown } from "../lib/paydayBreakdown";
 
 /** Rejects a plan from an API that predates the fields this page relies on. */
 function checkPlanShape(plan: PaydayPlan) {
@@ -207,11 +208,9 @@ export default function OverviewPage({
                   <h3 className="text-sm font-semibold">
                     How each account’s transfer is worked out
                   </h3>
-                  {paydayPlan.accounts
-                    .filter((account) => account.expensesDue > 0)
-                    .map((account) => (
-                      <AccountBreakdown key={account.accountId} account={account} />
-                    ))}
+                  {paydayPlan.accounts.filter(showsBreakdown).map((account) => (
+                    <AccountBreakdown key={account.accountId} account={account} />
+                  ))}
                 </div>
               </div>
             ) : (

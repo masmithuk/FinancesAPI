@@ -125,8 +125,18 @@ public sealed class PaydayPlanService(FinanceDbContext db) : IPaydayPlanService
                 occurrence.Date.Date >= today &&
                 occurrence.Date.Date < planEnd)
             .ToListAsync(cancellationToken);
+        // Plan dates already paid by linked activity, whenever it happened (a bill can be paid early),
+        // matching the forecast's rule so the two never disagree.
+        var paidPlanDates = (await db.Occurrences
+                .Where(occurrence =>
+                    accountIds.Contains(occurrence.AccountId) &&
+                    occurrence.ScheduledItemId != null)
+                .Select(occurrence => new { occurrence.ScheduledItemId, occurrence.PlanDate, occurrence.Date })
+                .ToListAsync(cancellationToken))
+            .Select(item => (item.ScheduledItemId!.Value, (item.PlanDate ?? item.Date).Date))
+            .ToHashSet();
 
-        var events = BuildEvents(schedules, occurrences, today, planEnd);
+        var events = BuildEvents(schedules, occurrences, paidPlanDates, today, planEnd);
         var planEvents = events
             .Where(item => item.Date >= planStart && item.Date < planEnd)
             .ToList();
@@ -163,10 +173,11 @@ public sealed class PaydayPlanService(FinanceDbContext db) : IPaydayPlanService
         var prePaydayShortfalls = new List<PrePaydayShortfallResponse>();
         foreach (var account in accounts)
         {
+            // Only movements before payday count as running short: a balance that is simply below zero
+            // today (a credit card, say) is already reflected in what to send.
             var (lowest, date) = ComputeRunningMinimum(
                 prePaydayEvents.Where(item => item.AccountId == account.Id),
-                balanceByAccount.GetValueOrDefault(account.Id),
-                today);
+                balanceByAccount.GetValueOrDefault(account.Id));
             if (date is { } lowestDate && lowest < 0m)
             {
                 prePaydayShortfalls.Add(new PrePaydayShortfallResponse(account.Id, account.Name, lowest, lowestDate));
@@ -270,14 +281,15 @@ public sealed class PaydayPlanService(FinanceDbContext db) : IPaydayPlanService
         new(null, null, null, 0m, 0m, 0m, [], [], PrePaydayShortfalls: []);
 
     /// <summary>
-    /// Walks an account's balance day by day and returns its lowest point and the first date it is reached.
+    /// Walks an account's balance day by day and returns its lowest point below the starting balance and the
+    /// first date it is reached (no date when it never drops below where it started).
     /// Movements on the same day are netted first, so the order of entries within a day doesn't matter.
     /// </summary>
-    private static (decimal Lowest, DateTime? Date) ComputeRunningMinimum(IEnumerable<CashFlowEvent> events, decimal start, DateTime today)
+    private static (decimal Lowest, DateTime? Date) ComputeRunningMinimum(IEnumerable<CashFlowEvent> events, decimal start)
     {
         var running = start;
         var lowest = start;
-        DateTime? lowestDate = start < 0m ? today : null;
+        DateTime? lowestDate = null;
         foreach (var day in events.GroupBy(item => item.Date).OrderBy(group => group.Key))
         {
             running += day.Sum(item => item.Amount);
@@ -388,6 +400,7 @@ public sealed class PaydayPlanService(FinanceDbContext db) : IPaydayPlanService
     private static List<CashFlowEvent> BuildEvents(
         IReadOnlyCollection<ScheduledItem> schedules,
         IReadOnlyCollection<Occurrence> occurrences,
+        IReadOnlySet<(Guid ScheduledItemId, DateTime PlanDate)> paidPlanDates,
         DateTime from,
         DateTime to)
     {
@@ -396,9 +409,7 @@ public sealed class PaydayPlanService(FinanceDbContext db) : IPaydayPlanService
         {
             foreach (var date in GetOccurrences(schedule, from, to.AddDays(-1)))
             {
-                if (occurrences.Any(occurrence =>
-                        occurrence.ScheduledItemId == schedule.Id &&
-                        (occurrence.PlanDate ?? occurrence.Date).Date == date))
+                if (paidPlanDates.Contains((schedule.Id, date)))
                 {
                     continue;
                 }

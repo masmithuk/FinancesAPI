@@ -467,6 +467,95 @@ public sealed class PaydayPlanTests
     }
 
     [Fact]
+    public async Task Current_Mode_Negative_Balance_Reports_No_PrePayday_Shortfall()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        using var factory = new FinanceApiFactory(connection);
+        using var client = await CreateAuthenticatedClient(factory, "current-negative-user");
+        await SeedUpcomingAsync(factory, "current-negative-user", -40m, salaryStartOffsetDays: -2);
+
+        var plan = await GetPlanAsync(client);
+
+        Assert.Equal("current", plan.GetProperty("mode").GetString());
+        Assert.Empty(plan.GetProperty("prePaydayShortfalls").EnumerateArray());
+    }
+
+    [Fact]
+    public async Task Upcoming_Steady_Negative_Balance_Is_Not_A_Shortfall()
+    {
+        // A credit card that is simply below zero, with nothing due before payday, isn't running short.
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        using var factory = new FinanceApiFactory(connection);
+        using var client = await CreateAuthenticatedClient(factory, "upcoming-steady-negative-user");
+        await SeedUpcomingAsync(factory, "upcoming-steady-negative-user", -40m);
+
+        var plan = await GetPlanAsync(client);
+
+        Assert.Equal("upcoming", plan.GetProperty("mode").GetString());
+        Assert.Empty(plan.GetProperty("prePaydayShortfalls").EnumerateArray());
+    }
+
+    [Fact]
+    public async Task Upcoming_Bill_Paid_Early_Is_Not_Taken_Off_Again()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        using var factory = new FinanceApiFactory(connection);
+        using var client = await CreateAuthenticatedClient(factory, "paid-early-user");
+        var today = DateTime.UtcNow.Date;
+        Guid billsId;
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<FinanceDbContext>();
+            var ownerId = await db.Users.Where(user => user.UserName == "paid-early-user").Select(user => user.Id).SingleAsync();
+            var income = new Account { Name = "Income", OwnerId = ownerId };
+            var bills = new Account { Name = "Bills", OwnerId = ownerId };
+            db.Accounts.AddRange(income, bills);
+            db.ScheduledItems.Add(new ScheduledItem
+            {
+                Name = "Salary",
+                Account = income,
+                Amount = 1000m,
+                StartDate = today.AddDays(-11),
+                Frequency = 1,
+                IsIncome = true
+            });
+            var rent = new ScheduledItem
+            {
+                Name = "Rent",
+                Account = bills,
+                Amount = 300m,
+                StartDate = today.AddDays(2),
+                Frequency = 2,
+                IsIncome = false
+            };
+            db.ScheduledItems.Add(rent);
+            // Rent due in two days was paid yesterday; the balance already reflects it.
+            db.Occurrences.Add(new Occurrence
+            {
+                Account = bills,
+                ScheduledItem = rent,
+                Date = today.AddDays(-1),
+                PlanDate = today.AddDays(2),
+                Amount = 300m,
+                IsIncome = false,
+                IsReconciled = true
+            });
+            db.Balances.Add(new Balance { Account = bills, Date = today, Amount = 50m });
+            await db.SaveChangesAsync();
+            billsId = bills.Id;
+        }
+
+        var plan = await GetPlanAsync(client);
+
+        var bills2 = AccountIn(plan, billsId);
+        Assert.Equal(50m, bills2.GetProperty("expectedBalance").GetDecimal());
+        Assert.Empty(plan.GetProperty("prePaydayShortfalls").EnumerateArray());
+    }
+
+    [Fact]
     public async Task Breakdown_Includes_BalanceCheckedOn()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");

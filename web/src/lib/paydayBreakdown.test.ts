@@ -1,5 +1,21 @@
 import { describe, expect, it } from "vite-plus/test";
-import { alreadyThereLabel, fundingNote, needsBalanceCheck } from "./paydayBreakdown";
+import {
+  alreadyThereLabel,
+  fundingNote,
+  needsBalanceCheck,
+  showsBreakdown,
+} from "./paydayBreakdown";
+
+describe("showsBreakdown", () => {
+  it("explains every account that has bills or receives a transfer", () => {
+    expect(showsBreakdown({ expensesDue: 300, toSend: 0 })).toBe(true);
+    expect(showsBreakdown({ expensesDue: 0, toSend: 500 })).toBe(true);
+  });
+
+  it("skips accounts with nothing due and nothing to send", () => {
+    expect(showsBreakdown({ expensesDue: 0, toSend: 0 })).toBe(false);
+  });
+});
 
 describe("alreadyThereLabel", () => {
   it("shows counted money as a deduction", () => {

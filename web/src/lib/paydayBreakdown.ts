@@ -9,6 +9,11 @@ export function fundingNote(account: { fromExisting: number; toSend: number }): 
   return `${money(account.fromExisting)} already in this account was counted. If you take it out first, send ${money(account.toSend + account.fromExisting)}.`;
 }
 
+/** Whether an account gets a breakdown row: it has bills, or a transfer to it (an overdraft) needs explaining. */
+export function showsBreakdown(account: { expensesDue: number; toSend: number }): boolean {
+  return account.expensesDue > 0 || account.toSend > 0;
+}
+
 /** The "Already there" deduction; zero is shown as £0.00 rather than -£0.00. */
 export function alreadyThereLabel(fromExisting: number): string {
   return money(fromExisting > 0 ? -fromExisting : 0);

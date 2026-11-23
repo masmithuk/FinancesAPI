@@ -22,6 +22,7 @@ export default function AccountsPage({ token }: { token: string }) {
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
   const [bankAmount, setBankAmount] = useState("");
+  const [savingBankBalance, setSavingBankBalance] = useState(false);
   const [editingBalance, setEditingBalance] = useState<BalanceEdit | null>(null);
   const [balanceHistoryError, setBalanceHistoryError] = useState("");
   const [error, setError] = useState("");
@@ -135,8 +136,10 @@ export default function AccountsPage({ token }: { token: string }) {
 
   async function updateToBankBalance(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!selectedId) return;
+    // A second submit while saving would read the old total and record the difference twice.
+    if (!selectedId || savingBankBalance) return;
     setError("");
+    setSavingBankBalance(true);
     try {
       // No date: the server uses its own today, so a local date ahead of UTC is never rejected as future.
       await api.setActualBalance(token, selectedId, Number(bankAmount));
@@ -144,6 +147,8 @@ export default function AccountsPage({ token }: { token: string }) {
       await loadBalances(selectedId, true);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to update the balance.");
+    } finally {
+      setSavingBankBalance(false);
     }
   }
 
@@ -315,7 +320,7 @@ export default function AccountsPage({ token }: { token: string }) {
                     onChange={setBankAmount}
                     placeholder="0.00"
                   />
-                  <Button variant="primary">
+                  <Button variant="primary" disabled={savingBankBalance}>
                     Update balance <span>→</span>
                   </Button>
                 </form>
