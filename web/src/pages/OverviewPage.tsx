@@ -12,7 +12,12 @@ import {
   PrePaydayWarning,
   TransferRow,
 } from "./PaydayBreakdown";
-import { defaultPeriod, showsBreakdown, type PaydayPeriod } from "../lib/paydayBreakdown";
+import {
+  defaultPeriod,
+  periodLabel,
+  showsBreakdown,
+  type PaydayPeriod,
+} from "../lib/paydayBreakdown";
 
 /** Rejects a plan from an API that predates the fields this page relies on. */
 function checkPlanShape(plan: PaydayPlan) {
@@ -159,7 +164,7 @@ export default function OverviewPage({
             title="Transfers to make"
             subtitle={
               paydayPlan?.periodStartDate && paydayPlan.periodEndDate
-                ? `${paydayPlan.mode === "upcoming" ? "Upcoming payday" : "This pay period"} · Payday ${dateLabel(paydayPlan.periodStartDate)} → ${dateLabel(paydayPlan.periodEndDate)}`
+                ? periodLabel(paydayPlan.mode, paydayPlan.periodStartDate, paydayPlan.periodEndDate)
                 : "Add a recurring income schedule to calculate your payday plan."
             }
           >

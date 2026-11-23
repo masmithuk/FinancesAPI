@@ -1,4 +1,11 @@
-import { money } from "../shared/format";
+import { dateLabel, money } from "../shared/format";
+
+/** The panel's subtitle for a plan: this pay period runs until payday, the next one payday to payday. */
+export function periodLabel(mode: "current" | "upcoming", start: string, end: string): string {
+  return mode === "upcoming"
+    ? `Next pay period · Payday ${dateLabel(start)} → ${dateLabel(end)}`
+    : `This pay period · ${dateLabel(start)} until payday on ${dateLabel(end)}`;
+}
 
 /**
  * Explains that money already in an account was counted towards its bills, and how much to send

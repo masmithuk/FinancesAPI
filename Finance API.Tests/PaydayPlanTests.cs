@@ -738,6 +738,28 @@ public sealed class PaydayPlanTests
     }
 
     [Fact]
+    public async Task Current_Period_Before_First_Ever_Payday_Runs_From_Today_To_That_Payday()
+    {
+        // The salary's first payment is in two days; rent is due after it. Nothing is due before payday.
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        using var factory = new FinanceApiFactory(connection);
+        using var client = await CreateAuthenticatedClient(factory, "first-payday-user");
+        var seed = await SeedUpcomingAsync(factory, "first-payday-user", 0m, salaryStartOffsetDays: 2);
+        var today = DateTime.UtcNow.Date;
+
+        var plan = await GetPlanAsync(client, "current");
+
+        Assert.Equal("current", plan.GetProperty("mode").GetString());
+        Assert.Equal(today, plan.GetProperty("periodStartDate").GetDateTime().Date);
+        Assert.Equal(today.AddDays(2), plan.GetProperty("periodEndDate").GetDateTime().Date);
+        var bills = AccountIn(plan, seed.BillsId);
+        Assert.Equal(0m, bills.GetProperty("expensesDue").GetDecimal());
+        Assert.Equal(0m, bills.GetProperty("unfundedShortfall").GetDecimal());
+        Assert.Empty(plan.GetProperty("transfers").EnumerateArray());
+    }
+
+    [Fact]
     public async Task Current_Period_Money_Needed_Later_Is_Not_Shown_As_Spare()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");

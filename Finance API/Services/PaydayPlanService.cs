@@ -119,15 +119,25 @@ public sealed class PaydayPlanService(FinanceDbContext db) : IPaydayPlanService
         };
 
         // Otherwise the current pay period starts at the most recent payday, even if that was a few days ago.
+        // Before the first payday there is none: asked for this pay period, it runs from today to that
+        // payday (left to choose, the first payday's period is planned instead, as before).
+        var beforeFirstPayday = !isUpcoming &&
+                                period == PaydayPeriod.Current &&
+                                currentWindow is null &&
+                                upcomingWindow is not null;
         var payWindow = isUpcoming
             ? upcomingWindow
-            : currentWindow ?? payWindows.FirstOrDefault(window => window.Start >= today);
+            : beforeFirstPayday
+                ? new PayWindow(today, today)
+                : currentWindow ?? payWindows.FirstOrDefault(window => window.Start >= today);
         if (payWindow is null)
         {
             return EmptyPlan();
         }
 
-        var nextPayday = payWindows.FirstOrDefault(window => window.Start > payWindow.Start);
+        var nextPayday = beforeFirstPayday
+            ? upcomingWindow
+            : payWindows.FirstOrDefault(window => window.Start > payWindow.Start);
         if (nextPayday is null)
         {
             return EmptyPlan();

@@ -5,8 +5,23 @@ import {
   fundingNote,
   moneyLeftByAccount,
   needsBalanceCheck,
+  periodLabel,
   showsBreakdown,
 } from "./paydayBreakdown";
+
+describe("periodLabel", () => {
+  it("describes this pay period as running until payday", () => {
+    expect(periodLabel("current", "2026-11-23T00:00:00", "2026-11-25T00:00:00")).toBe(
+      "This pay period · 23 Nov 2026 until payday on 25 Nov 2026",
+    );
+  });
+
+  it("describes the next pay period from payday to payday", () => {
+    expect(periodLabel("upcoming", "2026-11-25T00:00:00", "2026-12-25T00:00:00")).toBe(
+      "Next pay period · Payday 25 Nov 2026 → 25 Dec 2026",
+    );
+  });
+});
 
 describe("defaultPeriod", () => {
   it("opens on the next pay period within a week of payday", () => {
