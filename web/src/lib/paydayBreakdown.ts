@@ -9,6 +9,34 @@ export function fundingNote(account: { fromExisting: number; toSend: number }): 
   return `${money(account.fromExisting)} already in this account was counted. If you take it out first, send ${money(account.toSend + account.fromExisting)}.`;
 }
 
+export type PaydayPeriod = "current" | "next";
+
+const UPCOMING_LOOK_AHEAD_DAYS = 7;
+
+/**
+ * The pay period the Overview opens on: the next one within a week of payday (matching the server's
+ * own look-ahead), otherwise this one. Dates are `YYYY-MM-DD`, optionally with a time.
+ */
+export function defaultPeriod(nextPeriodStart: string | null, today: string): PaydayPeriod {
+  if (!nextPeriodStart) return "current";
+  const days = (Date.parse(nextPeriodStart.slice(0, 10)) - Date.parse(today)) / 86_400_000;
+  return days <= UPCOMING_LOOK_AHEAD_DAYS ? "next" : "current";
+}
+
+/** Accounts holding spare money once bills are paid and transfers made, largest first. */
+export function moneyLeftByAccount(
+  accounts: Array<{ accountId: string; accountName: string; leftAfterTransfers: number }>,
+): Array<{ accountId: string; accountName: string; amount: number }> {
+  return accounts
+    .filter((account) => account.leftAfterTransfers >= 0.005)
+    .map((account) => ({
+      accountId: account.accountId,
+      accountName: account.accountName,
+      amount: account.leftAfterTransfers,
+    }))
+    .sort((a, b) => b.amount - a.amount);
+}
+
 /** Whether an account gets a breakdown row: it has bills, or a transfer to it (an overdraft) needs explaining. */
 export function showsBreakdown(account: { expensesDue: number; toSend: number }): boolean {
   return account.expensesDue > 0 || account.toSend > 0;

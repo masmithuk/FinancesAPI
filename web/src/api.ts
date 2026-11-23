@@ -146,6 +146,8 @@ export interface PaydayPlan {
     toSend: number;
     fromExisting: number;
     balanceCheckedOn: string | null;
+    /** What the account holds once bills are paid and the recommended transfers are made. */
+    leftAfterTransfers: number;
   }>;
   transfers: Array<{
     fromAccountId: string;
@@ -436,7 +438,16 @@ export const api = {
     post<Occurrence>(`/api/accounts/${accountId}/occurrences/${occurrenceId}/reconcile`, token, {}),
   overview: (token: string) => request<FinancialOverview>("/api/financialoverview", token),
   setup: (token: string) => request<SetupStatus>("/api/setup", token),
-  paydayPlan: (token: string) => request<PaydayPlan>("/api/payday-plan", token),
+  /** With no period, the server picks the next pay period within a week of payday, else this one. */
+  paydayPlan: (token: string, period?: "current" | "next") =>
+    request<PaydayPlan>(period ? `/api/payday-plan?period=${period}` : "/api/payday-plan", token),
+  /** Records a transfer the user has made at their bank, on both accounts. */
+  recordTransfer: (token: string, fromAccountId: string, toAccountId: string, amount: number) =>
+    post<{ fromBalanceId: string; toBalanceId: string; date: string; amount: number }>(
+      "/api/transfers",
+      token,
+      { fromAccountId, toAccountId, amount },
+    ),
   forecast: (token: string, accountId: string) =>
     request<Forecast>(`/api/accounts/${accountId}/forecast`, token),
 };

@@ -1,19 +1,28 @@
 import { useEffect, useState } from "react";
 import { ApiError, api, type FinancialOverview, type PaydayPlan, type SetupStatus } from "../api";
-import { dateLabel, money } from "../shared/format";
+import { dateLabel, money, today } from "../shared/format";
 import { buildShareSummary, whatsAppShareUrl } from "../lib/shareSummary";
 import { Button } from "../shared/Controls";
 import { EmptyState, ErrorMessage, PageHeading, Panel } from "../shared/Ui";
 import type { Page } from "../types";
-import { AccountBreakdown, BalanceReminder, PrePaydayWarning } from "./PaydayBreakdown";
-import { showsBreakdown } from "../lib/paydayBreakdown";
+import {
+  AccountBreakdown,
+  BalanceReminder,
+  MoneyLeftAfterTransfers,
+  PrePaydayWarning,
+  TransferRow,
+} from "./PaydayBreakdown";
+import { defaultPeriod, showsBreakdown, type PaydayPeriod } from "../lib/paydayBreakdown";
 
 /** Rejects a plan from an API that predates the fields this page relies on. */
 function checkPlanShape(plan: PaydayPlan) {
   if (
     !Number.isFinite(plan.discretionaryIncome) ||
     plan.accounts.some(
-      (account) => !Number.isFinite(account.expensesDue) || !Number.isFinite(account.toSend),
+      (account) =>
+        !Number.isFinite(account.expensesDue) ||
+        !Number.isFinite(account.toSend) ||
+        !Number.isFinite(account.leftAfterTransfers),
     )
   ) {
     throw new ApiError(
@@ -22,6 +31,15 @@ function checkPlanShape(plan: PaydayPlan) {
     );
   }
   return plan;
+}
+
+/** This pay period and the next one, side by side. */
+async function loadPlans(token: string): Promise<Record<PaydayPeriod, PaydayPlan | null>> {
+  const [current, next] = await Promise.all([
+    api.paydayPlan(token, "current"),
+    api.paydayPlan(token, "next"),
+  ]);
+  return { current: checkPlanShape(current), next: checkPlanShape(next) };
 }
 
 export default function OverviewPage({
@@ -33,7 +51,12 @@ export default function OverviewPage({
 }) {
   const [summary, setSummary] = useState<FinancialOverview | null>(null);
   const [setup, setSetup] = useState<SetupStatus | null>(null);
-  const [paydayPlan, setPaydayPlan] = useState<PaydayPlan | null>(null);
+  const [plans, setPlans] = useState<Record<PaydayPeriod, PaydayPlan | null>>({
+    current: null,
+    next: null,
+  });
+  const [period, setPeriod] = useState<PaydayPeriod>("current");
+  const paydayPlan = plans[period];
   const [paydayPlanError, setPaydayPlanError] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -62,17 +85,19 @@ export default function OverviewPage({
         .setup(token)
         .then(setSetup)
         .catch((reason: unknown) => reportError(reason, "setup status")),
-      api
-        .paydayPlan(token)
-        .then((plan) => setPaydayPlan(checkPlanShape(plan)))
+      loadPlans(token)
+        .then((loaded) => {
+          setPlans(loaded);
+          setPeriod(defaultPeriod(loaded.next?.periodStartDate ?? null, today()));
+        })
         .catch((reason: unknown) => reportError(reason, "payday plan")),
     ]).finally(() => setLoading(false));
   }, [token]);
 
-  // After a balance is brought up to date, recalculate the transfers and the account totals it affects.
+  // After a balance update or a recorded transfer, recalculate both periods and the account totals.
   async function refreshPaydayPlan() {
-    const [plan, overview] = await Promise.all([api.paydayPlan(token), api.overview(token)]);
-    setPaydayPlan(checkPlanShape(plan));
+    const [loaded, overview] = await Promise.all([loadPlans(token), api.overview(token)]);
+    setPlans(loaded);
     setSummary(overview);
   }
 
@@ -138,6 +163,21 @@ export default function OverviewPage({
                 : "Add a recurring income schedule to calculate your payday plan."
             }
           >
+            {(plans.current?.paydayStartDate || plans.next?.paydayStartDate) && (
+              <div className="mb-4 flex flex-wrap gap-2" role="group" aria-label="Pay period">
+                {(["current", "next"] as const).map((option) => (
+                  <Button
+                    key={option}
+                    variant={period === option ? "primary" : "outline"}
+                    size="small"
+                    aria-pressed={period === option}
+                    onClick={() => setPeriod(option)}
+                  >
+                    {option === "current" ? "This pay period" : "Next pay period"}
+                  </Button>
+                ))}
+              </div>
+            )}
             {paydayPlan?.paydayStartDate ? (
               <div className="grid gap-5">
                 <BalanceReminder
@@ -174,17 +214,12 @@ export default function OverviewPage({
                   <div className="grid gap-2">
                     <h3 className="text-sm font-semibold">Recommended transfers</h3>
                     {paydayPlan.transfers.map((transfer, index) => (
-                      <div
-                        className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3"
+                      <TransferRow
                         key={`${transfer.fromAccountId}-${transfer.toAccountId}-${index}`}
-                      >
-                        <span>
-                          <strong>{transfer.fromAccountName}</strong>
-                          <span className="text-muted-foreground"> → </span>
-                          <strong>{transfer.toAccountName}</strong>
-                        </span>
-                        <strong className="text-base">{money(transfer.amount)}</strong>
-                      </div>
+                        token={token}
+                        transfer={transfer}
+                        onRecorded={refreshPaydayPlan}
+                      />
                     ))}
                   </div>
                 ) : (
@@ -212,6 +247,7 @@ export default function OverviewPage({
                     <AccountBreakdown key={account.accountId} account={account} />
                   ))}
                 </div>
+                <MoneyLeftAfterTransfers accounts={paydayPlan.accounts} />
               </div>
             ) : (
               <div className="grid justify-items-start gap-3">

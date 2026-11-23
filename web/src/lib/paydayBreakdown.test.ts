@@ -1,10 +1,49 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
   alreadyThereLabel,
+  defaultPeriod,
   fundingNote,
+  moneyLeftByAccount,
   needsBalanceCheck,
   showsBreakdown,
 } from "./paydayBreakdown";
+
+describe("defaultPeriod", () => {
+  it("opens on the next pay period within a week of payday", () => {
+    expect(defaultPeriod("2026-11-26T00:00:00", "2026-11-23")).toBe("next");
+    expect(defaultPeriod("2026-11-30T00:00:00", "2026-11-23")).toBe("next");
+  });
+
+  it("opens on this pay period when payday is further away", () => {
+    expect(defaultPeriod("2026-12-01T00:00:00", "2026-11-23")).toBe("current");
+  });
+
+  it("opens on this pay period when there is no next payday", () => {
+    expect(defaultPeriod(null, "2026-11-23")).toBe("current");
+  });
+});
+
+describe("moneyLeftByAccount", () => {
+  it("lists accounts holding spare money after transfers, largest first", () => {
+    expect(
+      moneyLeftByAccount([
+        { accountId: "a", accountName: "Joint", leftAfterTransfers: 0 },
+        { accountId: "b", accountName: "Savings", leftAfterTransfers: 40 },
+        { accountId: "c", accountName: "Current", leftAfterTransfers: 1060 },
+        { accountId: "d", accountName: "Bills", leftAfterTransfers: -20 },
+      ]),
+    ).toEqual([
+      { accountId: "c", accountName: "Current", amount: 1060 },
+      { accountId: "b", accountName: "Savings", amount: 40 },
+    ]);
+  });
+
+  it("ignores rounding dust", () => {
+    expect(
+      moneyLeftByAccount([{ accountId: "a", accountName: "Joint", leftAfterTransfers: 0.004 }]),
+    ).toEqual([]);
+  });
+});
 
 describe("showsBreakdown", () => {
   it("explains every account that has bills or receives a transfer", () => {

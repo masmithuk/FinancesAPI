@@ -1,6 +1,11 @@
 import { useState, type FormEvent } from "react";
 import { api, type PaydayPlan } from "../api";
-import { alreadyThereLabel, fundingNote, needsBalanceCheck } from "../lib/paydayBreakdown";
+import {
+  alreadyThereLabel,
+  fundingNote,
+  moneyLeftByAccount,
+  needsBalanceCheck,
+} from "../lib/paydayBreakdown";
 import { Button, TextField } from "../shared/Controls";
 import { dateLabel, money, today } from "../shared/format";
 
@@ -120,6 +125,82 @@ export function AccountBreakdown({ account }: { account: PlanAccount }) {
         <strong className="text-right">{money(account.toSend)}</strong>
       </div>
       {note && <p className="text-xs text-muted-foreground">ⓘ {note}</p>}
+    </div>
+  );
+}
+
+/** A recommended transfer, with a button to record it once it has been made at the bank. */
+export function TransferRow({
+  token,
+  transfer,
+  onRecorded,
+}: {
+  token: string;
+  transfer: PaydayPlan["transfers"][number];
+  onRecorded: () => Promise<void>;
+}) {
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function markDone() {
+    // A second click while saving would record the transfer twice.
+    if (saving) return;
+    setError("");
+    setSaving(true);
+    try {
+      await api.recordTransfer(
+        token,
+        transfer.fromAccountId,
+        transfer.toAccountId,
+        transfer.amount,
+      );
+      await onRecorded();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to record the transfer.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
+      <span>
+        <strong>{transfer.fromAccountName}</strong>
+        <span className="text-muted-foreground"> → </span>
+        <strong>{transfer.toAccountName}</strong>
+      </span>
+      <span className="flex items-center gap-3">
+        <strong className="text-base">{money(transfer.amount)}</strong>
+        <Button variant="outline" size="small" disabled={saving} onClick={markDone}>
+          Mark as done
+        </Button>
+      </span>
+      {error && <p className="w-full text-sm text-destructive">{error}</p>}
+    </div>
+  );
+}
+
+/** Where the spare (discretionary) money sits once bills are paid and transfers are made. */
+export function MoneyLeftAfterTransfers({ accounts }: { accounts: PlanAccount[] }) {
+  const holdings = moneyLeftByAccount(accounts);
+  return (
+    <div className="grid gap-2">
+      <h3 className="text-sm font-semibold">Where your money sits after transfers</h3>
+      {holdings.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          Nothing is left over once bills are paid in this pay period.
+        </p>
+      ) : (
+        holdings.map((holding) => (
+          <div
+            className="flex justify-between gap-3 border-b py-1 text-sm last:border-0"
+            key={holding.accountId}
+          >
+            <span>{holding.accountName}</span>
+            <strong>{money(holding.amount)}</strong>
+          </div>
+        ))
+      )}
     </div>
   );
 }
