@@ -220,6 +220,10 @@ public sealed class PaydayPlanService(FinanceDbContext db) : IPaydayPlanService
                 var existingOverdraft = Math.Min(0m, balanceByAccount.GetValueOrDefault(account.Id));
                 return Math.Min(expected - existingOverdraft, Math.Max(expected, 0m));
             });
+        // The part of today's overdraft left in place (zero or negative).
+        var untoppedOverdraft = accounts.ToDictionary(
+            account => account.Id,
+            account => expectedBalanceByAccount[account.Id] - fundingBalanceByAccount[account.Id]);
 
         // Money already in an account (including salary already received) counts towards its bills.
         var fundsByAccount = accounts.ToDictionary(
@@ -234,7 +238,10 @@ public sealed class PaydayPlanService(FinanceDbContext db) : IPaydayPlanService
             account => account.Id,
             account =>
             {
-                var spare = Math.Max(0m, fundsByAccount[account.Id] - expensesDueByAccount[account.Id]);
+                // An overdraft that isn't topped up still uses up money arriving in that account.
+                var spare = Math.Max(
+                    0m,
+                    fundsByAccount[account.Id] - expensesDueByAccount[account.Id] + untoppedOverdraft[account.Id]);
                 if (isUpcoming)
                 {
                     return spare;
@@ -287,10 +294,13 @@ public sealed class PaydayPlanService(FinanceDbContext db) : IPaydayPlanService
                     Math.Max(0m, fundingBalanceByAccount[account.Id]),
                     Math.Max(0m, expensesDueByAccount[account.Id] - incomeByAccount[account.Id])),
                 account.BalanceCheckedOn,
-                // Where the spare money sits once bills are paid and the suggested transfers are made.
-                fundsByAccount[account.Id] - expensesDueByAccount[account.Id] +
-                    transfers.Where(transfer => transfer.ToAccountId == account.Id).Sum(transfer => transfer.Amount) -
-                    transfers.Where(transfer => transfer.FromAccountId == account.Id).Sum(transfer => transfer.Amount),
+                // Where the spare money sits once bills are paid and the suggested transfers are made: what
+                // is really there, and in this pay period never money the account needs after payday.
+                Math.Min(
+                    fundsByAccount[account.Id] - expensesDueByAccount[account.Id] + untoppedOverdraft[account.Id] +
+                        transfers.Where(transfer => transfer.ToAccountId == account.Id).Sum(transfer => transfer.Amount) -
+                        transfers.Where(transfer => transfer.FromAccountId == account.Id).Sum(transfer => transfer.Amount),
+                    availableSources[account.Id]),
                 // Overdraft that bills before payday add to today's balance; it is part of what to send.
                 Math.Max(0m, -fundingBalanceByAccount[account.Id])))
             .ToList();

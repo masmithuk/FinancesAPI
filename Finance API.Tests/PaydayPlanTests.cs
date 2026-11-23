@@ -738,6 +738,37 @@ public sealed class PaydayPlanTests
     }
 
     [Fact]
+    public async Task Current_Period_Money_Needed_Later_Is_Not_Shown_As_Spare()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        using var factory = new FinanceApiFactory(connection);
+        using var client = await CreateAuthenticatedClient(factory, "reserve-left-user");
+        var ids = await SeedAccountsAsync(factory, "reserve-left-user", ("Joint", 1000m, 900m, 5));
+
+        var plan = await GetPlanAsync(client, "current");
+
+        Assert.Equal(100m, AccountIn(plan, ids["Joint"]).GetProperty("leftAfterTransfers").GetDecimal());
+    }
+
+    [Fact]
+    public async Task Overdrawn_Source_Can_Only_Send_What_Is_Really_There()
+    {
+        // Income is £800 overdrawn today, so after the £1,000 salary only £200 is really there.
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        using var factory = new FinanceApiFactory(connection);
+        using var client = await CreateAuthenticatedClient(factory, "overdrawn-source-user");
+        var seed = await SeedUpcomingAsync(factory, "overdrawn-source-user", 0m, incomeBalance: -800m);
+
+        var plan = await GetPlanAsync(client, "next");
+
+        Assert.Equal(200m, Assert.Single(plan.GetProperty("transfers").EnumerateArray()).GetProperty("amount").GetDecimal());
+        Assert.Equal(100m, AccountIn(plan, seed.BillsId).GetProperty("unfundedShortfall").GetDecimal());
+        Assert.Equal(0m, AccountIn(plan, seed.IncomeId).GetProperty("leftAfterTransfers").GetDecimal());
+    }
+
+    [Fact]
     public async Task Negative_Balance_With_No_Bills_Gets_No_Transfer()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
