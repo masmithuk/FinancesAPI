@@ -115,10 +115,10 @@ export function AccountBreakdown({ account }: { account: PlanAccount }) {
         <span className="text-right">{money(account.incomeIn)}</span>
         <span>Already there</span>
         <span className="text-right">{alreadyThereLabel(account.fromExisting)}</span>
-        {account.expectedBalance < 0 && (
+        {account.overdraftToCover > 0 && (
           <>
-            <span>Overdrawn by</span>
-            <span className="text-right">{money(-account.expectedBalance)}</span>
+            <span>Overdrawn before payday by</span>
+            <span className="text-right">{money(account.overdraftToCover)}</span>
           </>
         )}
         <strong>Send</strong>

@@ -651,6 +651,129 @@ public sealed class PaydayPlanTests
         Assert.Equal(300m, Assert.Single(plan.GetProperty("transfers").EnumerateArray()).GetProperty("amount").GetDecimal());
     }
 
+    // Payday is today + 3 (fortnightly salary into Income, last paid 11 days ago). Each extra account is
+    // (name, balance today, a monthly bill amount or 0, the day offset of that bill).
+    private static async Task<Dictionary<string, Guid>> SeedAccountsAsync(
+        FinanceApiFactory factory,
+        string userName,
+        params (string Name, decimal Balance, decimal Bill, int BillDay)[] accounts)
+    {
+        var today = DateTime.UtcNow.Date;
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<FinanceDbContext>();
+        var ownerId = await db.Users.Where(user => user.UserName == userName).Select(user => user.Id).SingleAsync();
+        var income = new Account { Name = "Income", OwnerId = ownerId };
+        db.Accounts.Add(income);
+        db.ScheduledItems.Add(new ScheduledItem
+        {
+            Name = "Salary",
+            Account = income,
+            Amount = 1000m,
+            StartDate = today.AddDays(-11),
+            Frequency = 1,
+            IsIncome = true
+        });
+        var ids = new Dictionary<string, Guid> { ["Income"] = income.Id };
+        foreach (var (name, balance, bill, billDay) in accounts)
+        {
+            var account = new Account { Name = name, OwnerId = ownerId };
+            db.Accounts.Add(account);
+            if (balance != 0m)
+            {
+                db.Balances.Add(new Balance { Account = account, Date = today, Amount = balance });
+            }
+
+            if (bill > 0m)
+            {
+                db.ScheduledItems.Add(new ScheduledItem
+                {
+                    Name = $"{name} bill",
+                    Account = account,
+                    Amount = bill,
+                    StartDate = today.AddDays(billDay),
+                    Frequency = 2,
+                    IsIncome = false
+                });
+            }
+
+            ids[name] = account.Id;
+        }
+
+        await db.SaveChangesAsync();
+        return ids;
+    }
+
+    [Fact]
+    public async Task Current_Period_Keeps_Money_The_Next_Period_Needs()
+    {
+        // Joint holds £900 for a mortgage due after payday; Bills runs £20 short before payday.
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        using var factory = new FinanceApiFactory(connection);
+        using var client = await CreateAuthenticatedClient(factory, "reserve-user");
+        var ids = await SeedAccountsAsync(factory, "reserve-user", ("Joint", 900m, 900m, 5), ("Bills", 20m, 40m, 1));
+
+        var plan = await GetPlanAsync(client, "current");
+
+        Assert.DoesNotContain(plan.GetProperty("transfers").EnumerateArray(), transfer =>
+            transfer.GetProperty("fromAccountId").GetGuid() == ids["Joint"]);
+        Assert.Equal(20m, AccountIn(plan, ids["Bills"]).GetProperty("unfundedShortfall").GetDecimal());
+    }
+
+    [Fact]
+    public async Task Current_Period_Can_Use_Money_Not_Needed_Later()
+    {
+        // Joint holds £1,000 but only needs £900 after payday, so £20 can cover Bills now.
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        using var factory = new FinanceApiFactory(connection);
+        using var client = await CreateAuthenticatedClient(factory, "reserve-spare-user");
+        var ids = await SeedAccountsAsync(factory, "reserve-spare-user", ("Joint", 1000m, 900m, 5), ("Bills", 20m, 40m, 1));
+
+        var plan = await GetPlanAsync(client, "current");
+
+        var transfer = Assert.Single(plan.GetProperty("transfers").EnumerateArray());
+        Assert.Equal(ids["Joint"], transfer.GetProperty("fromAccountId").GetGuid());
+        Assert.Equal(20m, transfer.GetProperty("amount").GetDecimal());
+    }
+
+    [Fact]
+    public async Task Negative_Balance_With_No_Bills_Gets_No_Transfer()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        using var factory = new FinanceApiFactory(connection);
+        using var client = await CreateAuthenticatedClient(factory, "credit-card-user");
+        var ids = await SeedAccountsAsync(factory, "credit-card-user", ("Credit card", -500m, 0m, 0));
+
+        foreach (var period in new[] { "current", "next" })
+        {
+            var plan = await GetPlanAsync(client, period);
+
+            var card = AccountIn(plan, ids["Credit card"]);
+            Assert.Equal(0m, card.GetProperty("toSend").GetDecimal());
+            Assert.Equal(0m, card.GetProperty("overdraftToCover").GetDecimal());
+            Assert.Empty(plan.GetProperty("transfers").EnumerateArray());
+        }
+    }
+
+    [Fact]
+    public async Task Existing_Overdraft_Is_Not_Topped_Up_But_Bills_Are()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        using var factory = new FinanceApiFactory(connection);
+        using var client = await CreateAuthenticatedClient(factory, "existing-overdraft-user");
+        var seed = await SeedUpcomingAsync(factory, "existing-overdraft-user", -50m);
+
+        var plan = await GetPlanAsync(client, "next");
+
+        var bills = AccountIn(plan, seed.BillsId);
+        Assert.Equal(-50m, bills.GetProperty("expectedBalance").GetDecimal());
+        Assert.Equal(300m, bills.GetProperty("toSend").GetDecimal());
+        Assert.Equal(0m, bills.GetProperty("overdraftToCover").GetDecimal());
+    }
+
     [Fact]
     public async Task Breakdown_Includes_BalanceCheckedOn()
     {

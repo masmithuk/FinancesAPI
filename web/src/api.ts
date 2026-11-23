@@ -148,6 +148,8 @@ export interface PaydayPlan {
     balanceCheckedOn: string | null;
     /** What the account holds once bills are paid and the recommended transfers are made. */
     leftAfterTransfers: number;
+    /** Overdraft that bills before payday add to today's balance; part of what to send. */
+    overdraftToCover: number;
   }>;
   transfers: Array<{
     fromAccountId: string;

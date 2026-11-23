@@ -53,7 +53,8 @@ public sealed record AccountFundingResponse(
     decimal ToSend = 0m,
     decimal FromExisting = 0m,
     DateTime? BalanceCheckedOn = null,
-    decimal LeftAfterTransfers = 0m);
+    decimal LeftAfterTransfers = 0m,
+    decimal OverdraftToCover = 0m);
 
 /// <summary>An account whose balance is projected to go below zero before the next payday.</summary>
 public sealed record PrePaydayShortfallResponse(
@@ -134,11 +135,15 @@ public sealed class PaydayPlanService(FinanceDbContext db) : IPaydayPlanService
 
         var planStart = payWindow.Start < today ? today : payWindow.Start;
         var planEnd = nextPayday.Start;
+        // This pay period looks on to the end of the next one, so it doesn't move money needed after payday.
+        var eventsEnd = isUpcoming
+            ? planEnd
+            : payWindows.FirstOrDefault(window => window.Start > nextPayday.Start)?.Start ?? planEnd;
         var occurrences = await db.Occurrences
             .Where(occurrence =>
                 accountIds.Contains(occurrence.AccountId) &&
                 occurrence.Date.Date >= today &&
-                occurrence.Date.Date < planEnd)
+                occurrence.Date.Date < eventsEnd)
             .ToListAsync(cancellationToken);
         // Plan dates already paid by linked activity, whenever it happened (a bill can be paid early),
         // matching the forecast's rule so the two never disagree.
@@ -156,7 +161,7 @@ public sealed class PaydayPlanService(FinanceDbContext db) : IPaydayPlanService
             .Where(account => account.BalanceCheckedOn?.Date == today)
             .Select(account => account.Id)
             .ToHashSet();
-        var events = BuildEvents(schedules, occurrences, paidPlanDates, checkedToday, today, planEnd);
+        var events = BuildEvents(schedules, occurrences, paidPlanDates, checkedToday, today, eventsEnd);
         var planEvents = events
             .Where(item => item.Date >= planStart && item.Date < planEnd)
             .ToList();
@@ -194,7 +199,7 @@ public sealed class PaydayPlanService(FinanceDbContext db) : IPaydayPlanService
         foreach (var account in accounts)
         {
             // Only movements before payday count as running short: a balance that is simply below zero
-            // today (a credit card, say) is already reflected in what to send.
+            // today (a credit card, say) isn't running short and isn't topped up.
             var (lowest, date) = ComputeRunningMinimum(
                 prePaydayEvents.Where(item => item.AccountId == account.Id),
                 balanceByAccount.GetValueOrDefault(account.Id));
@@ -204,16 +209,42 @@ public sealed class PaydayPlanService(FinanceDbContext db) : IPaydayPlanService
             }
         }
 
+        // A balance already below zero today (a credit card, say) isn't topped up: only an overdraft that
+        // bills before payday add on top of today's balance needs covering, and money coming in only
+        // counts once the balance is back above zero.
+        var fundingBalanceByAccount = accounts.ToDictionary(
+            account => account.Id,
+            account =>
+            {
+                var expected = expectedBalanceByAccount[account.Id];
+                var existingOverdraft = Math.Min(0m, balanceByAccount.GetValueOrDefault(account.Id));
+                return Math.Min(expected - existingOverdraft, Math.Max(expected, 0m));
+            });
+
         // Money already in an account (including salary already received) counts towards its bills.
         var fundsByAccount = accounts.ToDictionary(
             account => account.Id,
-            account => expectedBalanceByAccount[account.Id] + incomeByAccount[account.Id]);
+            account => fundingBalanceByAccount[account.Id] + incomeByAccount[account.Id]);
         var transferNeeded = accounts.ToDictionary(
             account => account.Id,
             account => Math.Max(0m, expensesDueByAccount[account.Id] - fundsByAccount[account.Id]));
+        // This pay period can only give away money the account won't need before the end of the next one:
+        // its lowest projected balance over that time, before any transfers.
         var availableSources = accounts.ToDictionary(
             account => account.Id,
-            account => Math.Max(0m, fundsByAccount[account.Id] - expensesDueByAccount[account.Id]));
+            account =>
+            {
+                var spare = Math.Max(0m, fundsByAccount[account.Id] - expensesDueByAccount[account.Id]);
+                if (isUpcoming)
+                {
+                    return spare;
+                }
+
+                var (lowest, _) = ComputeRunningMinimum(
+                    events.Where(item => item.AccountId == account.Id),
+                    balanceByAccount.GetValueOrDefault(account.Id));
+                return Math.Min(spare, Math.Max(0m, lowest));
+            });
         var transfers = new List<TransferRecommendationResponse>();
         var unfunded = transferNeeded.ToDictionary(pair => pair.Key, pair => pair.Value);
 
@@ -253,13 +284,15 @@ public sealed class PaydayPlanService(FinanceDbContext db) : IPaydayPlanService
                 expectedBalanceByAccount[account.Id],
                 transferNeeded[account.Id],
                 Math.Min(
-                    Math.Max(0m, expectedBalanceByAccount[account.Id]),
+                    Math.Max(0m, fundingBalanceByAccount[account.Id]),
                     Math.Max(0m, expensesDueByAccount[account.Id] - incomeByAccount[account.Id])),
                 account.BalanceCheckedOn,
                 // Where the spare money sits once bills are paid and the suggested transfers are made.
                 fundsByAccount[account.Id] - expensesDueByAccount[account.Id] +
                     transfers.Where(transfer => transfer.ToAccountId == account.Id).Sum(transfer => transfer.Amount) -
-                    transfers.Where(transfer => transfer.FromAccountId == account.Id).Sum(transfer => transfer.Amount)))
+                    transfers.Where(transfer => transfer.FromAccountId == account.Id).Sum(transfer => transfer.Amount),
+                // Overdraft that bills before payday add to today's balance; it is part of what to send.
+                Math.Max(0m, -fundingBalanceByAccount[account.Id])))
             .ToList();
 
         var currentBalance = balanceByAccount.Values.Sum();
