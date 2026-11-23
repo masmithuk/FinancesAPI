@@ -21,15 +21,34 @@ public sealed record PaydayPlanResponse(
     IReadOnlyList<AccountFundingResponse> Accounts,
     IReadOnlyList<TransferRecommendationResponse> Transfers,
     decimal CurrentBalance = 0m,
-    decimal LeftToSpend = 0m);
+    decimal LeftToSpend = 0m,
+    string Mode = "current",
+    DateTime? PeriodStartDate = null,
+    DateTime? PeriodEndDate = null,
+    IReadOnlyList<PrePaydayShortfallResponse>? PrePaydayShortfalls = null);
 
-/// <summary>An account's scheduled expenses and any amount left unfunded.</summary>
+/// <summary>
+/// An account's bills for the planned period and how they are funded: income paid in, the balance
+/// expected at the start of the period, what to send, and how much of the bills existing money covers.
+/// </summary>
 public sealed record AccountFundingResponse(
     Guid AccountId,
     string AccountName,
     decimal ExpensesDue,
     decimal UnfundedShortfall,
-    bool ReceivesPaydayIncome);
+    bool ReceivesPaydayIncome,
+    decimal IncomeIn = 0m,
+    decimal ExpectedBalance = 0m,
+    decimal ToSend = 0m,
+    decimal FromExisting = 0m,
+    DateTime? BalanceCheckedOn = null);
+
+/// <summary>An account whose balance is projected to go below zero before the next payday.</summary>
+public sealed record PrePaydayShortfallResponse(
+    Guid AccountId,
+    string AccountName,
+    decimal LowestBalance,
+    DateTime Date);
 
 /// <summary>A suggested transfer between two owned accounts.</summary>
 public sealed record TransferRecommendationResponse(
@@ -44,6 +63,9 @@ public sealed class PaydayPlanService(FinanceDbContext db) : IPaydayPlanService
     private const int PaydayGroupingDays = 2;
     private const int PlanningHorizonMonths = 18;
     private const int PlanningLookBackMonths = 2;
+    private const int UpcomingLookAheadDays = 7;
+    private const string CurrentMode = "current";
+    private const string UpcomingMode = "upcoming";
 
     private sealed record PayWindow(DateTime Start, DateTime End);
     private sealed record CashFlowEvent(Guid AccountId, DateTime Date, decimal Amount, bool IsIncome);
@@ -72,9 +94,18 @@ public sealed class PaydayPlanService(FinanceDbContext db) : IPaydayPlanService
 
         var scheduleHorizon = today.AddMonths(PlanningHorizonMonths);
         var payWindows = BuildPayWindows(incomeSchedules, today.AddMonths(-PlanningLookBackMonths), scheduleHorizon);
-        // The current pay period starts at the most recent payday, even if that payday was a few days ago.
-        var payWindow = payWindows.LastOrDefault(window => window.Start <= today)
-            ?? payWindows.FirstOrDefault(window => window.Start >= today);
+        var currentWindow = payWindows.LastOrDefault(window => window.Start <= today);
+        var upcomingWindow = payWindows.FirstOrDefault(window => window.Start > today);
+        var insidePayday = currentWindow is not null && today <= currentWindow.End;
+        // Shortly before payday, plan the pay period that starts on that payday rather than the few days left.
+        var isUpcoming = !insidePayday &&
+                         upcomingWindow is not null &&
+                         (upcomingWindow.Start - today).Days <= UpcomingLookAheadDays;
+
+        // Otherwise the current pay period starts at the most recent payday, even if that was a few days ago.
+        var payWindow = isUpcoming
+            ? upcomingWindow
+            : currentWindow ?? payWindows.FirstOrDefault(window => window.Start >= today);
         if (payWindow is null)
         {
             return EmptyPlan();
@@ -121,10 +152,31 @@ public sealed class PaydayPlanService(FinanceDbContext db) : IPaydayPlanService
                 .ToListAsync(cancellationToken))
             .ToDictionary(item => item.AccountId, item => item.Total);
 
+        // Before payday, project each balance to payday: today's balance plus everything due in between.
+        var prePaydayEvents = isUpcoming
+            ? events.Where(item => item.Date < payWindow.Start).ToList()
+            : [];
+        var expectedBalanceByAccount = accounts.ToDictionary(
+            account => account.Id,
+            account => balanceByAccount.GetValueOrDefault(account.Id) +
+                       prePaydayEvents.Where(item => item.AccountId == account.Id).Sum(item => item.Amount));
+        var prePaydayShortfalls = new List<PrePaydayShortfallResponse>();
+        foreach (var account in accounts)
+        {
+            var (lowest, date) = ComputeRunningMinimum(
+                prePaydayEvents.Where(item => item.AccountId == account.Id),
+                balanceByAccount.GetValueOrDefault(account.Id),
+                today);
+            if (date is { } lowestDate && lowest < 0m)
+            {
+                prePaydayShortfalls.Add(new PrePaydayShortfallResponse(account.Id, account.Name, lowest, lowestDate));
+            }
+        }
+
         // Money already in an account (including salary already received) counts towards its bills.
         var fundsByAccount = accounts.ToDictionary(
             account => account.Id,
-            account => balanceByAccount.GetValueOrDefault(account.Id) + incomeByAccount[account.Id]);
+            account => expectedBalanceByAccount[account.Id] + incomeByAccount[account.Id]);
         var transferNeeded = accounts.ToDictionary(
             account => account.Id,
             account => Math.Max(0m, expensesDueByAccount[account.Id] - fundsByAccount[account.Id]));
@@ -165,7 +217,14 @@ public sealed class PaydayPlanService(FinanceDbContext db) : IPaydayPlanService
                 account.Name,
                 expensesDueByAccount[account.Id],
                 unfunded[account.Id],
-                incomeAccountIds.Contains(account.Id)))
+                incomeAccountIds.Contains(account.Id),
+                incomeByAccount[account.Id],
+                expectedBalanceByAccount[account.Id],
+                transferNeeded[account.Id],
+                Math.Min(
+                    Math.Max(0m, expectedBalanceByAccount[account.Id]),
+                    Math.Max(0m, expensesDueByAccount[account.Id] - incomeByAccount[account.Id])),
+                account.BalanceCheckedOn))
             .ToList();
 
         var currentBalance = balanceByAccount.Values.Sum();
@@ -200,11 +259,37 @@ public sealed class PaydayPlanService(FinanceDbContext db) : IPaydayPlanService
             accountResponses,
             transfers,
             currentBalance,
-            periodIncome - periodExpenses - spent);
+            periodIncome - periodExpenses - spent,
+            isUpcoming ? UpcomingMode : CurrentMode,
+            periodStart,
+            planEnd,
+            prePaydayShortfalls);
     }
 
     private static PaydayPlanResponse EmptyPlan() =>
-        new(null, null, null, 0m, 0m, 0m, [], []);
+        new(null, null, null, 0m, 0m, 0m, [], [], PrePaydayShortfalls: []);
+
+    /// <summary>
+    /// Walks an account's balance day by day and returns its lowest point and the first date it is reached.
+    /// Movements on the same day are netted first, so the order of entries within a day doesn't matter.
+    /// </summary>
+    private static (decimal Lowest, DateTime? Date) ComputeRunningMinimum(IEnumerable<CashFlowEvent> events, decimal start, DateTime today)
+    {
+        var running = start;
+        var lowest = start;
+        DateTime? lowestDate = start < 0m ? today : null;
+        foreach (var day in events.GroupBy(item => item.Date).OrderBy(group => group.Key))
+        {
+            running += day.Sum(item => item.Amount);
+            if (running < lowest)
+            {
+                lowest = running;
+                lowestDate = day.Key;
+            }
+        }
+
+        return (lowest, lowestDate);
+    }
 
     private static List<PayWindow> BuildPayWindows(
         IReadOnlyCollection<ScheduledItem> incomeSchedules,

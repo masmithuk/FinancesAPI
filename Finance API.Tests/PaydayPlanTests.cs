@@ -298,6 +298,190 @@ public sealed class PaydayPlanTests
             .GetDecimal());
     }
 
+    // Upcoming mode: a fortnightly £1,000 salary that was last paid 11 days ago, so the next payday is
+    // today + 3 and the pay period after it runs to today + 17. Rent of £300 is due monthly from today + 10.
+    private sealed record UpcomingSeed(Guid IncomeId, Guid BillsId);
+
+    private static async Task<UpcomingSeed> SeedUpcomingAsync(
+        FinanceApiFactory factory,
+        string userName,
+        decimal billsBalance,
+        decimal? oneOffExpenseTomorrow = null,
+        int salaryStartOffsetDays = -11,
+        DateTime? billsCheckedOn = null)
+    {
+        var today = DateTime.UtcNow.Date;
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<FinanceDbContext>();
+        var ownerId = await db.Users.Where(user => user.UserName == userName).Select(user => user.Id).SingleAsync();
+        var income = new Account { Name = "Income", OwnerId = ownerId };
+        var bills = new Account { Name = "Bills", OwnerId = ownerId, BalanceCheckedOn = billsCheckedOn };
+        db.Accounts.AddRange(income, bills);
+        if (billsBalance != 0m)
+        {
+            db.Balances.Add(new Balance { Account = bills, Date = today, Amount = billsBalance });
+        }
+
+        db.ScheduledItems.AddRange(
+            new ScheduledItem
+            {
+                Name = "Salary",
+                Account = income,
+                Amount = 1000m,
+                StartDate = today.AddDays(salaryStartOffsetDays),
+                Frequency = 1,
+                IsIncome = true
+            },
+            new ScheduledItem
+            {
+                Name = "Rent",
+                Account = bills,
+                Amount = 300m,
+                StartDate = today.AddDays(10),
+                Frequency = 2,
+                IsIncome = false
+            });
+        if (oneOffExpenseTomorrow is { } expense)
+        {
+            db.Occurrences.Add(new Occurrence
+            {
+                Account = bills,
+                Date = today.AddDays(1),
+                Amount = expense,
+                IsIncome = false,
+                Description = "One-off"
+            });
+        }
+
+        await db.SaveChangesAsync();
+        return new UpcomingSeed(income.Id, bills.Id);
+    }
+
+    private static async Task<JsonElement> GetPlanAsync(HttpClient client)
+    {
+        var response = await client.GetAsync("/api/payday-plan");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        return await response.Content.ReadFromJsonAsync<JsonElement>();
+    }
+
+    private static JsonElement AccountIn(JsonElement plan, Guid accountId) =>
+        Assert.Single(plan.GetProperty("accounts").EnumerateArray(), account =>
+            account.GetProperty("accountId").GetGuid() == accountId);
+
+    [Fact]
+    public async Task Upcoming_Mode_Plans_Next_Pay_Period()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        using var factory = new FinanceApiFactory(connection);
+        using var client = await CreateAuthenticatedClient(factory, "upcoming-mode-user");
+        var seed = await SeedUpcomingAsync(factory, "upcoming-mode-user", 0m);
+        var today = DateTime.UtcNow.Date;
+
+        var plan = await GetPlanAsync(client);
+
+        Assert.Equal("upcoming", plan.GetProperty("mode").GetString());
+        Assert.Equal(today.AddDays(3), plan.GetProperty("periodStartDate").GetDateTime().Date);
+        Assert.Equal(today.AddDays(17), plan.GetProperty("periodEndDate").GetDateTime().Date);
+        var bills = AccountIn(plan, seed.BillsId);
+        Assert.Equal(300m, bills.GetProperty("expensesDue").GetDecimal());
+        Assert.Equal(300m, bills.GetProperty("toSend").GetDecimal());
+        var transfer = Assert.Single(plan.GetProperty("transfers").EnumerateArray());
+        Assert.Equal(seed.IncomeId, transfer.GetProperty("fromAccountId").GetGuid());
+        Assert.Equal(seed.BillsId, transfer.GetProperty("toAccountId").GetGuid());
+        Assert.Equal(300m, transfer.GetProperty("amount").GetDecimal());
+    }
+
+    [Fact]
+    public async Task Upcoming_Counts_Money_Already_In_Account()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        using var factory = new FinanceApiFactory(connection);
+        using var client = await CreateAuthenticatedClient(factory, "upcoming-existing-user");
+        var seed = await SeedUpcomingAsync(factory, "upcoming-existing-user", 100m);
+
+        var plan = await GetPlanAsync(client);
+
+        var bills = AccountIn(plan, seed.BillsId);
+        Assert.Equal(100m, bills.GetProperty("expectedBalance").GetDecimal());
+        Assert.Equal(100m, bills.GetProperty("fromExisting").GetDecimal());
+        Assert.Equal(200m, bills.GetProperty("toSend").GetDecimal());
+        Assert.Equal(200m, Assert.Single(plan.GetProperty("transfers").EnumerateArray()).GetProperty("amount").GetDecimal());
+    }
+
+    [Fact]
+    public async Task Upcoming_Projects_Balance_To_Payday()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        using var factory = new FinanceApiFactory(connection);
+        using var client = await CreateAuthenticatedClient(factory, "upcoming-project-user");
+        var seed = await SeedUpcomingAsync(factory, "upcoming-project-user", 150m, oneOffExpenseTomorrow: 50m);
+
+        var plan = await GetPlanAsync(client);
+
+        var bills = AccountIn(plan, seed.BillsId);
+        Assert.Equal(100m, bills.GetProperty("expectedBalance").GetDecimal());
+        Assert.Equal(300m, bills.GetProperty("expensesDue").GetDecimal());
+        Assert.Equal(200m, bills.GetProperty("toSend").GetDecimal());
+    }
+
+    [Fact]
+    public async Task Upcoming_Overdrawn_Account_Adds_Overdraft_And_Reports_Shortfall()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        using var factory = new FinanceApiFactory(connection);
+        using var client = await CreateAuthenticatedClient(factory, "upcoming-overdrawn-user");
+        var seed = await SeedUpcomingAsync(factory, "upcoming-overdrawn-user", 20m, oneOffExpenseTomorrow: 70m);
+        var today = DateTime.UtcNow.Date;
+
+        var plan = await GetPlanAsync(client);
+
+        var bills = AccountIn(plan, seed.BillsId);
+        Assert.Equal(-50m, bills.GetProperty("expectedBalance").GetDecimal());
+        Assert.Equal(0m, bills.GetProperty("fromExisting").GetDecimal());
+        Assert.Equal(350m, bills.GetProperty("toSend").GetDecimal());
+        var shortfall = Assert.Single(plan.GetProperty("prePaydayShortfalls").EnumerateArray());
+        Assert.Equal(seed.BillsId, shortfall.GetProperty("accountId").GetGuid());
+        Assert.Equal(-50m, shortfall.GetProperty("lowestBalance").GetDecimal());
+        Assert.Equal(today.AddDays(1), shortfall.GetProperty("date").GetDateTime().Date);
+    }
+
+    [Fact]
+    public async Task Current_Mode_Far_From_Payday_Is_Unchanged()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        using var factory = new FinanceApiFactory(connection);
+        using var client = await CreateAuthenticatedClient(factory, "current-mode-user");
+        var seed = await SeedUpcomingAsync(
+            factory, "current-mode-user", 120m, oneOffExpenseTomorrow: 500m, salaryStartOffsetDays: -2);
+
+        var plan = await GetPlanAsync(client);
+
+        Assert.Equal("current", plan.GetProperty("mode").GetString());
+        Assert.Equal(120m, AccountIn(plan, seed.BillsId).GetProperty("expectedBalance").GetDecimal());
+        Assert.Empty(plan.GetProperty("prePaydayShortfalls").EnumerateArray());
+    }
+
+    [Fact]
+    public async Task Breakdown_Includes_BalanceCheckedOn()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        using var factory = new FinanceApiFactory(connection);
+        using var client = await CreateAuthenticatedClient(factory, "checked-on-user");
+        var today = DateTime.UtcNow.Date;
+        var seed = await SeedUpcomingAsync(factory, "checked-on-user", 0m, billsCheckedOn: today);
+
+        var plan = await GetPlanAsync(client);
+
+        Assert.Equal(today, AccountIn(plan, seed.BillsId).GetProperty("balanceCheckedOn").GetDateTime().Date);
+        Assert.Equal(JsonValueKind.Null, AccountIn(plan, seed.IncomeId).GetProperty("balanceCheckedOn").ValueKind);
+    }
+
     private static async Task<HttpClient> CreateAuthenticatedClient(FinanceApiFactory factory, string userName)
     {
         var client = factory.CreateClient();
