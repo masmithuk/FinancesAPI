@@ -50,6 +50,12 @@ public static class AccountsEndpoints
             .WithSummary("Update an account to the balance shown by the bank");
 
         // List balances for a specific account (caller must own the account).
+        endpoints.MapPut("/api/accounts/{id}/plan-settings", SetPlanSettingsAsync)
+            .RequireAuthorization()
+            .WithName("SetAccountPlanSettings")
+            .WithTags("Accounts")
+            .WithSummary("Mark an account as everyday, spending or savings for the payday plan");
+
         endpoints.MapGet("/api/accounts/{id}/balances", ListBalancesAsync)
             .RequireAuthorization()
             .WithName("ListBalances")
@@ -85,7 +91,13 @@ public static class AccountsEndpoints
     /// <summary>
     /// Public representation of an account returned by the API.
     /// </summary>
-    public sealed record AccountResponse(Guid Id, string Name);
+    public sealed record AccountResponse(Guid Id, string Name, string Role = AccountRoles.Everyday, decimal? SavePerPayday = null);
+
+    /// <summary>
+    /// How the payday plan treats an account: "everyday", "spending" or "savings". SavePerPayday is
+    /// what to pay into a savings account each payday; it is ignored for other roles.
+    /// </summary>
+    public sealed record PlanSettingsRequest(string Role, decimal? SavePerPayday = null);
 
     /// <summary>
     /// Payload to add a dated balance to an account.
@@ -107,6 +119,36 @@ public static class AccountsEndpoints
 
     /// <summary>The difference recorded (no entry when it is zero) and the date the balance was checked.</summary>
     public sealed record ActualBalanceResponse(decimal Difference, Guid? BalanceId, DateTime BalanceCheckedOn);
+
+    /// <summary>
+    /// Sets an account's role in the payday plan. Only one account can be the spending account, so
+    /// choosing a new one makes the old one everyday. Caller must own the account.
+    /// </summary>
+    private static async Task<IResult> SetPlanSettingsAsync(Guid id, PlanSettingsRequest request, FinanceDbContext db, ClaimsPrincipal user, Finance_API.Services.IUserContextService userContext)
+    {
+        var ownerId = userContext.GetUserId(user);
+        if (string.IsNullOrEmpty(ownerId)) return Results.Unauthorized();
+        var account = await db.Accounts.FindAsync(id);
+        if (account is null || account.OwnerId != ownerId) return Results.NotFound();
+        var role = request.Role?.Trim().ToLowerInvariant();
+        if (!AccountRoles.IsValid(role))
+            return Results.BadRequest(new { detail = "Role must be everyday, spending or savings." });
+        if (request.SavePerPayday is < 0 or > 999999999)
+            return Results.BadRequest(new { detail = "The amount to save each payday can't be negative." });
+
+        if (role == AccountRoles.Spending)
+        {
+            var others = await db.Accounts
+                .Where(other => other.OwnerId == ownerId && other.Id != id && other.Role == AccountRoles.Spending)
+                .ToListAsync();
+            others.ForEach(other => other.Role = AccountRoles.Everyday);
+        }
+
+        account.Role = role!;
+        account.SavePerPayday = role == AccountRoles.Savings && request.SavePerPayday > 0 ? request.SavePerPayday : null;
+        await db.SaveChangesAsync();
+        return Results.Ok(new AccountResponse(account.Id, account.Name, account.Role, account.SavePerPayday));
+    }
 
     private const string BankBalanceNote = "Bank balance update";
 
@@ -169,7 +211,7 @@ public static class AccountsEndpoints
         db.Accounts.Add(account);
         await db.SaveChangesAsync();
 
-        return Results.Created($"/api/accounts/{account.Id}", new AccountResponse(account.Id, account.Name));
+        return Results.Created($"/api/accounts/{account.Id}", new AccountResponse(account.Id, account.Name, account.Role, account.SavePerPayday));
     }
 
     /// <summary>
@@ -180,7 +222,7 @@ public static class AccountsEndpoints
         var ownerId = userContext.GetUserId(user);
         var accounts = await db.Accounts
             .Where(a => a.OwnerId == ownerId)
-            .Select(a => new AccountResponse(a.Id, a.Name))
+            .Select(a => new AccountResponse(a.Id, a.Name, a.Role, a.SavePerPayday))
             .ToListAsync();
 
         return Results.Ok(accounts);
@@ -195,7 +237,7 @@ public static class AccountsEndpoints
         var account = await db.Accounts.FindAsync(id);
         if (account is null || account.OwnerId != ownerId) return Results.NotFound();
 
-        return Results.Ok(new AccountResponse(account.Id, account.Name));
+        return Results.Ok(new AccountResponse(account.Id, account.Name, account.Role, account.SavePerPayday));
     }
 
     /// <summary>

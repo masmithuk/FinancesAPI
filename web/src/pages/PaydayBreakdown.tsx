@@ -6,6 +6,7 @@ import {
   moneyLeftByAccount,
   moneyLeftCopy,
   needsBalanceCheck,
+  transferDestination,
 } from "../lib/paydayBreakdown";
 import { Button, TextField } from "../shared/Controls";
 import { dateLabel, money, today } from "../shared/format";
@@ -149,12 +150,23 @@ export function TransferRow({
     setError("");
     setSaving(true);
     try {
-      await api.recordTransfer(
-        token,
-        transfer.fromAccountId,
-        transfer.toAccountId,
-        transfer.amount,
-      );
+      if (transfer.toPotId) {
+        // Money into a pot leaves the account it is paid from.
+        await api.createContribution(
+          token,
+          transfer.toPotId,
+          transfer.fromAccountId,
+          transfer.amount,
+          today(),
+        );
+      } else {
+        await api.recordTransfer(
+          token,
+          transfer.fromAccountId,
+          transfer.toAccountId,
+          transfer.amount,
+        );
+      }
       await onRecorded();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to record the transfer.");
@@ -168,7 +180,7 @@ export function TransferRow({
       <span>
         <strong>{transfer.fromAccountName}</strong>
         <span className="text-muted-foreground"> → </span>
-        <strong>{transfer.toAccountName}</strong>
+        <strong>{transferDestination(transfer)}</strong>
       </span>
       <span className="flex items-center gap-3">
         <strong className="text-base">{money(transfer.amount)}</strong>

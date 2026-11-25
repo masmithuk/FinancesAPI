@@ -9,7 +9,110 @@ import {
   noPaydayYetMessage,
   periodLabel,
   showsBreakdown,
+  spareMoneyTip,
+  transferDestination,
+  transferGroups,
 } from "./paydayBreakdown";
+import type { PlannedTransfer } from "../api";
+
+function transfer(overrides: Partial<PlannedTransfer>): PlannedTransfer {
+  return {
+    fromAccountId: "income",
+    fromAccountName: "Income",
+    toAccountId: "bills",
+    toAccountName: "Bills",
+    amount: 100,
+    kind: "bills",
+    toPotId: null,
+    toPotName: null,
+    ...overrides,
+  };
+}
+
+describe("transferGroups", () => {
+  it("lists bills first, then savings and pots, then spending money, skipping empty groups", () => {
+    const bills = transfer({ kind: "bills" });
+    const pot = transfer({ kind: "pot", toPotId: "p", toPotName: "Holiday" });
+    const savings = transfer({ kind: "savings", toAccountName: "Savings" });
+    const spending = transfer({ kind: "spending", toAccountName: "Spending" });
+
+    const groups = transferGroups([spending, savings, bills, pot]);
+
+    expect(groups.map((group) => group.title)).toEqual([
+      "For bills",
+      "Put aside for savings",
+      "Spending money",
+    ]);
+    expect(groups[1].transfers).toEqual([savings, pot]);
+    expect(transferGroups([bills]).map((group) => group.title)).toEqual(["For bills"]);
+  });
+});
+
+describe("transferDestination", () => {
+  it("names the account for an ordinary transfer", () => {
+    expect(transferDestination(transfer({}))).toBe("Bills");
+  });
+
+  it("names the pot when the money is already in its account", () => {
+    expect(
+      transferDestination(
+        transfer({
+          kind: "pot",
+          toAccountId: "income",
+          toAccountName: "Income",
+          toPotId: "p",
+          toPotName: "Holiday",
+        }),
+      ),
+    ).toBe("Holiday pot");
+  });
+
+  it("names the pot and its account when the money comes from elsewhere", () => {
+    expect(
+      transferDestination(
+        transfer({ kind: "pot", toAccountName: "Bills", toPotId: "p", toPotName: "Holiday" }),
+      ),
+    ).toBe("Holiday pot in Bills");
+  });
+});
+
+describe("spareMoneyTip", () => {
+  it("suggests choosing a spending account when spare money is left and none is set", () => {
+    expect(
+      spareMoneyTip("upcoming", [
+        { role: "everyday", leftAfterTransfers: 700 },
+        { role: "everyday", leftAfterTransfers: 0 },
+      ]),
+    ).toBe(
+      "Spare money stays where your salary lands. On the Accounts page, choose a spending account and it will be sent there each payday. Mark savings accounts and give pots an amount to save each payday, and they’ll be paid first.",
+    );
+  });
+
+  it("suggests marking a savings account when spare money all goes to spending", () => {
+    expect(
+      spareMoneyTip("upcoming", [
+        { role: "spending", leftAfterTransfers: 700 },
+        { role: "everyday", leftAfterTransfers: 0 },
+      ]),
+    ).toBe(
+      "None of your accounts is marked as savings, so any of them can be used for bills and all spare money goes to your spending account. On the Accounts page, mark your savings account and give it an amount to save each payday.",
+    );
+  });
+
+  it("has nothing to say once spending and savings accounts are set", () => {
+    expect(
+      spareMoneyTip("upcoming", [
+        { role: "spending", leftAfterTransfers: 700 },
+        { role: "savings", leftAfterTransfers: 200 },
+      ]),
+    ).toBeNull();
+  });
+
+  it("has nothing to say with no spare money, or in this pay period", () => {
+    expect(spareMoneyTip("upcoming", [{ role: "everyday", leftAfterTransfers: 0 }])).toBeNull();
+    expect(spareMoneyTip("current", [{ role: "everyday", leftAfterTransfers: 700 }])).toBeNull();
+  });
+});
 
 describe("noPaydayYetMessage", () => {
   it("explains why this pay period has no totals and how to fix it", () => {

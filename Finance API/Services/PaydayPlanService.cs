@@ -57,7 +57,8 @@ public sealed record AccountFundingResponse(
     decimal FromExisting = 0m,
     DateTime? BalanceCheckedOn = null,
     decimal LeftAfterTransfers = 0m,
-    decimal OverdraftToCover = 0m);
+    decimal OverdraftToCover = 0m,
+    string Role = AccountRoles.Everyday);
 
 /// <summary>An account whose balance is projected to go below zero before the next payday.</summary>
 public sealed record PrePaydayShortfallResponse(
@@ -67,12 +68,29 @@ public sealed record PrePaydayShortfallResponse(
     DateTime Date);
 
 /// <summary>A suggested transfer between two owned accounts.</summary>
+/// <summary>
+/// A suggested transfer between two owned accounts, or into a pot. Kind is "bills" (covers bills),
+/// "savings" (a savings account's amount for this payday), "pot" (into ToPotId, which sits in
+/// ToAccountId; the same account when the money is already there) or "spending" (spare money sent to
+/// the spending account).
+/// </summary>
 public sealed record TransferRecommendationResponse(
     Guid FromAccountId,
     string FromAccountName,
     Guid ToAccountId,
     string ToAccountName,
-    decimal Amount);
+    decimal Amount,
+    string Kind = TransferKinds.Bills,
+    Guid? ToPotId = null,
+    string? ToPotName = null);
+
+public static class TransferKinds
+{
+    public const string Bills = "bills";
+    public const string Savings = "savings";
+    public const string Pot = "pot";
+    public const string Spending = "spending";
+}
 
 public sealed class PaydayPlanService(FinanceDbContext db) : IPaydayPlanService
 {
@@ -82,6 +100,11 @@ public sealed class PaydayPlanService(FinanceDbContext db) : IPaydayPlanService
     private const int UpcomingLookAheadDays = 7;
     private const string CurrentMode = "current";
     private const string UpcomingMode = "upcoming";
+    // The note POST /api/transfers puts on the receiving account's balance entry.
+    private const string TransferFromNotePrefix = "Transfer from ";
+
+    /// <summary>The share of the pay suggested for savings accounts that have no amount of their own.</summary>
+    public const decimal DefaultSavingsShare = 0.10m;
 
     private sealed record PayWindow(DateTime Start, DateTime End);
     private sealed record CashFlowEvent(Guid AccountId, DateTime Date, decimal Amount, bool IsIncome);
@@ -273,8 +296,10 @@ public sealed class PaydayPlanService(FinanceDbContext db) : IPaydayPlanService
                      .Where(account => transferNeeded[account.Id] > 0)
                      .OrderBy(account => account.Name))
         {
+            // Savings are never used for bills: what everyday money can't cover is left as still needed.
             foreach (var source in accounts.Where(account =>
                          account.Id != target.Id &&
+                         account.Role != AccountRoles.Savings &&
                          availableSources[account.Id] > 0))
             {
                 var amount = Math.Min(unfunded[target.Id], availableSources[source.Id]);
@@ -292,6 +317,65 @@ public sealed class PaydayPlanService(FinanceDbContext db) : IPaydayPlanService
                 availableSources[source.Id] -= amount;
                 unfunded[target.Id] -= amount;
             }
+        }
+
+        // Savings and spending money are shared out for the next pay period, and on payday itself for
+        // this one (the salary has just landed). Between paydays this pay period only covers bills.
+        var onPayday = !isUpcoming && !beforeFirstPayday && insidePayday;
+        if (onPayday)
+        {
+            // On payday only money already in an account is shared out, after its own bills until the
+            // next payday: income still to come this period (child benefit, say) isn't spent in advance.
+            foreach (var account in accounts)
+            {
+                var alreadyIn = Math.Max(0m, fundingBalanceByAccount[account.Id]) -
+                                expensesDueByAccount[account.Id] +
+                                transfers.Where(transfer => transfer.ToAccountId == account.Id).Sum(transfer => transfer.Amount) -
+                                transfers.Where(transfer => transfer.FromAccountId == account.Id).Sum(transfer => transfer.Amount);
+                availableSources[account.Id] = Math.Min(availableSources[account.Id], Math.Max(0m, alreadyIn));
+            }
+        }
+
+        if (isUpcoming || onPayday)
+        {
+            var pots = await db.Pots
+                .Where(pot => accountIds.Contains(pot.AccountId))
+                .Include(pot => pot.Goals)
+                .Include(pot => pot.Contributions)
+                .OrderBy(pot => pot.Name)
+                .ToListAsync(cancellationToken);
+            var paydaysFromThisOne = payWindows.Where(window => window.Start >= payWindow.Start).ToList();
+            // Savings paid in from shortly before this payday (but after the last one) count towards it,
+            // so a payment marked as done isn't suggested again.
+            var paidFrom = payWindow.Start.AddDays(-UpcomingLookAheadDays);
+            var previousPayday = payWindows.LastOrDefault(window => window.Start < payWindow.Start);
+            if (previousPayday is not null && previousPayday.End >= paidFrom)
+            {
+                paidFrom = previousPayday.End.AddDays(1);
+            }
+
+            var paidIntoPots = pots.ToDictionary(
+                pot => pot.Id,
+                pot => pot.Contributions
+                    .Where(contribution => contribution.Date.Date >= paidFrom && contribution.Date.Date < planEnd)
+                    .Sum(contribution => contribution.Amount));
+            var savingsIds = accounts
+                .Where(account => account.Role == AccountRoles.Savings)
+                .Select(account => account.Id)
+                .ToArray();
+            var paidIntoSavings = (await db.Balances
+                    .Where(balance =>
+                        savingsIds.Contains(balance.AccountId) &&
+                        balance.Amount > 0 &&
+                        balance.Note != null && balance.Note.StartsWith(TransferFromNotePrefix) &&
+                        balance.Date >= paidFrom && balance.Date < planEnd)
+                    .Select(balance => new { balance.AccountId, balance.Amount })
+                    .ToListAsync(cancellationToken))
+                .GroupBy(balance => balance.AccountId)
+                .ToDictionary(group => group.Key, group => group.Sum(balance => balance.Amount));
+            AddSpareMoneyTransfers(
+                accounts, pots, paydaysFromThisOne, paidIntoPots, paidIntoSavings, incomeByAccount.Values.Sum(),
+                availableSources, transfers);
         }
 
         var accountResponses = accounts
@@ -312,11 +396,13 @@ public sealed class PaydayPlanService(FinanceDbContext db) : IPaydayPlanService
                 // is really there, and in this pay period never money the account needs after payday.
                 Math.Min(
                     fundsByAccount[account.Id] - expensesDueByAccount[account.Id] + untoppedOverdraft[account.Id] +
-                        transfers.Where(transfer => transfer.ToAccountId == account.Id).Sum(transfer => transfer.Amount) -
+                        transfers.Where(transfer => transfer.ToAccountId == account.Id && transfer.ToPotId is null)
+                            .Sum(transfer => transfer.Amount) -
                         transfers.Where(transfer => transfer.FromAccountId == account.Id).Sum(transfer => transfer.Amount),
                     availableSources[account.Id]),
                 // Overdraft that bills before payday add to today's balance; it is part of what to send.
-                Math.Max(0m, -fundingBalanceByAccount[account.Id])))
+                Math.Max(0m, -fundingBalanceByAccount[account.Id]),
+                account.Role))
             .ToList();
 
         var currentBalance = balanceByAccount.Values.Sum();
@@ -357,6 +443,116 @@ public sealed class PaydayPlanService(FinanceDbContext db) : IPaydayPlanService
             planEnd,
             prePaydayShortfalls,
             beforeFirstPayday);
+    }
+
+    /// <summary>
+    /// Shares out the money left after bills at payday: each pot and savings account gets its amount for
+    /// this payday, then whatever is left in everyday accounts goes to the spending account. Savings
+    /// accounts are never drawn on here. Money sent to an account adds to what is left there; money paid
+    /// into a pot leaves its account.
+    /// </summary>
+    private static void AddSpareMoneyTransfers(
+        IReadOnlyList<Account> accounts,
+        IReadOnlyList<Pot> pots,
+        IReadOnlyList<PayWindow> paydaysFromThisOne,
+        IReadOnlyDictionary<Guid, decimal> paidIntoPots,
+        IReadOnlyDictionary<Guid, decimal> paidIntoSavings,
+        decimal payThisPeriod,
+        Dictionary<Guid, decimal> availableSources,
+        List<TransferRecommendationResponse> transfers)
+    {
+        var accountsById = accounts.ToDictionary(account => account.Id);
+        var everyday = accounts.Where(account => account.Role != AccountRoles.Savings).ToList();
+
+        // Sends up to `wanted` from everyday accounts other than `excluded`, `preferred` first.
+        void Send(decimal wanted, Guid? preferred, Guid? excluded, Func<Account, decimal, TransferRecommendationResponse> make)
+        {
+            foreach (var source in everyday
+                         .Where(account => account.Id != excluded && availableSources[account.Id] > 0)
+                         .OrderBy(account => account.Id == preferred ? 0 : 1)
+                         .ThenBy(account => account.Role == AccountRoles.Spending))
+            {
+                var amount = Math.Min(wanted, availableSources[source.Id]);
+                if (amount <= 0)
+                {
+                    break;
+                }
+
+                transfers.Add(make(source, amount));
+                availableSources[source.Id] -= amount;
+                wanted -= amount;
+            }
+        }
+
+        foreach (var pot in pots)
+        {
+            var wanted = PotAmountForThisPayday(pot, paydaysFromThisOne, paidIntoPots.GetValueOrDefault(pot.Id));
+            if (wanted > 0 && accountsById.TryGetValue(pot.AccountId, out var home))
+            {
+                Send(wanted, home.Id, null, (source, amount) => new TransferRecommendationResponse(
+                    source.Id, source.Name, home.Id, home.Name, amount, TransferKinds.Pot, pot.Id, pot.Name));
+            }
+        }
+
+        // A savings account with no amount of its own shares a tenth of the pay with the others like it.
+        var savingsAccounts = accounts.Where(account => account.Role == AccountRoles.Savings).ToList();
+        var withoutAmount = savingsAccounts.Count(account => !(account.SavePerPayday > 0));
+        var defaultAmount = withoutAmount == 0
+            ? 0m
+            : Math.Round(payThisPeriod * DefaultSavingsShare / withoutAmount, 2, MidpointRounding.ToZero);
+        foreach (var savings in savingsAccounts)
+        {
+            var amountForThisPayday = savings.SavePerPayday > 0 ? savings.SavePerPayday.Value : defaultAmount;
+            var before = transfers.Count;
+            Send(amountForThisPayday - paidIntoSavings.GetValueOrDefault(savings.Id), null, savings.Id, (source, amount) => new TransferRecommendationResponse(
+                source.Id, source.Name, savings.Id, savings.Name, amount, TransferKinds.Savings));
+            availableSources[savings.Id] += transfers.Skip(before).Sum(transfer => transfer.Amount);
+        }
+
+        var spending = accounts.FirstOrDefault(account => account.Role == AccountRoles.Spending);
+        if (spending is null)
+        {
+            return;
+        }
+
+        foreach (var source in everyday.Where(account => account.Id != spending.Id && availableSources[account.Id] > 0))
+        {
+            var amount = availableSources[source.Id];
+            transfers.Add(new TransferRecommendationResponse(
+                source.Id, source.Name, spending.Id, spending.Name, amount, TransferKinds.Spending));
+            availableSources[source.Id] = 0m;
+            availableSources[spending.Id] += amount;
+        }
+    }
+
+    /// <summary>
+    /// What a pot should still get this payday: its own amount if set, otherwise its goal's remaining
+    /// amount spread over the paydays left before the due date; never more than the goal needed, and less
+    /// whatever was already paid in for this payday.
+    /// </summary>
+    private static decimal PotAmountForThisPayday(Pot pot, IReadOnlyList<PayWindow> paydaysFromThisOne, decimal paidThisPayday)
+    {
+        var goal = pot.Goals.FirstOrDefault();
+        // What the goal needed before this payday's payments.
+        decimal? stillNeeded = goal is null
+            ? null
+            : Math.Max(0m, goal.TargetAmount - pot.Contributions.Sum(contribution => contribution.Amount) + paidThisPayday);
+        decimal wanted;
+        if (pot.SavePerPayday is { } fixedAmount)
+        {
+            wanted = fixedAmount;
+        }
+        else if (goal?.DueDate is { } due && stillNeeded > 0)
+        {
+            var paydaysLeft = Math.Max(1, paydaysFromThisOne.Count(window => window.Start < due.Date));
+            wanted = Math.Ceiling(stillNeeded.Value * 100m / paydaysLeft) / 100m;
+        }
+        else
+        {
+            return 0m;
+        }
+
+        return Math.Max(0m, (stillNeeded is { } cap ? Math.Min(wanted, cap) : wanted) - paidThisPayday);
     }
 
     private static PaydayPlanResponse EmptyPlan() =>

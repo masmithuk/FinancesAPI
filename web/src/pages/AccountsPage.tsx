@@ -5,6 +5,8 @@ import { Card } from "@/components/ui/card";
 import { Button, TextField } from "../shared/Controls";
 import { dateLabel, money, today } from "../shared/format";
 import { EmptyState, ErrorMessage, PageHeading, Panel } from "../shared/Ui";
+import { roleLabel } from "../lib/accountRoles";
+import { PlanSettingsPanel } from "./PlanSettingsPanel";
 
 const PAGE_SIZE = 25;
 
@@ -231,9 +233,7 @@ export default function AccountsPage({ token }: { token: string }) {
                     <span className={`account-symbol symbol-${index % 3}`}>£</span>
                     <span>
                       <strong>{account.name}</strong>
-                      <small>
-                        {selectedId === account.id ? "Currently selected" : "Personal account"}
-                      </small>
+                      <small>{roleLabel(account.role)}</small>
                     </span>
                     <span className="select-chevron">›</span>
                   </Button>
@@ -325,6 +325,7 @@ export default function AccountsPage({ token }: { token: string }) {
                   </Button>
                 </form>
               </Panel>
+              <PlanSettingsPanel token={token} account={currentAccount} onSaved={loadAccounts} />
               {forecast && (
                 <Panel
                   title="This month’s forecast"

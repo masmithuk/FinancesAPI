@@ -25,9 +25,30 @@ public sealed class Account
     /// </summary>
     public DateTime? BalanceCheckedOn { get; set; }
 
+    /// <summary>
+    /// How the payday plan treats this account: "everyday" (default), "spending" (where spare money is
+    /// sent once bills and savings are covered; at most one per user) or "savings" (never drained for
+    /// spending or used to pay bills).
+    /// </summary>
+    [Required, MaxLength(20)]
+    public string Role { get; set; } = AccountRoles.Everyday;
+
+    /// <summary>For a savings account, how much to pay in each payday, if anything.</summary>
+    public decimal? SavePerPayday { get; set; }
+
     public ICollection<Balance> Balances { get; set; } = new List<Balance>();
     public ICollection<Pot> Pots { get; set; } = new List<Pot>();
     public ICollection<ScheduledItem> ScheduledItems { get; set; } = new List<ScheduledItem>();
     public ICollection<Occurrence> Occurrences { get; set; } = new List<Occurrence>();
     public ICollection<PotContribution> PotContributions { get; set; } = new List<PotContribution>();
+}
+
+/// <summary>The roles an account can play in the payday plan.</summary>
+public static class AccountRoles
+{
+    public const string Everyday = "everyday";
+    public const string Spending = "spending";
+    public const string Savings = "savings";
+
+    public static bool IsValid(string? role) => role is Everyday or Spending or Savings;
 }

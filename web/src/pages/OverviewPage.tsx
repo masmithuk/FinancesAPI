@@ -17,6 +17,8 @@ import {
   noPaydayYetMessage,
   periodLabel,
   showsBreakdown,
+  spareMoneyTip,
+  transferGroups,
   type PaydayPeriod,
 } from "../lib/paydayBreakdown";
 
@@ -226,15 +228,22 @@ export default function OverviewPage({
                   </div>
                 )}
                 {paydayPlan.transfers.length ? (
-                  <div className="grid gap-2">
+                  <div className="grid gap-3">
                     <h3 className="text-sm font-semibold">Recommended transfers</h3>
-                    {paydayPlan.transfers.map((transfer, index) => (
-                      <TransferRow
-                        key={`${transfer.fromAccountId}-${transfer.toAccountId}-${index}`}
-                        token={token}
-                        transfer={transfer}
-                        onRecorded={refreshPaydayPlan}
-                      />
+                    {transferGroups(paydayPlan.transfers).map((group) => (
+                      <div className="grid gap-2" key={group.title}>
+                        <h4 className="text-xs font-semibold uppercase text-muted-foreground">
+                          {group.title}
+                        </h4>
+                        {group.transfers.map((transfer, index) => (
+                          <TransferRow
+                            key={`${transfer.fromAccountId}-${transfer.toAccountId}-${transfer.toPotId ?? ""}-${index}`}
+                            token={token}
+                            transfer={transfer}
+                            onRecorded={refreshPaydayPlan}
+                          />
+                        ))}
+                      </div>
                     ))}
                   </div>
                 ) : (
@@ -274,6 +283,14 @@ export default function OverviewPage({
                     ""
                   }
                 />
+                {spareMoneyTip(paydayPlan.mode, paydayPlan.accounts) && (
+                  <div className="grid justify-items-start gap-3 rounded-lg border p-3 text-sm">
+                    <p>{spareMoneyTip(paydayPlan.mode, paydayPlan.accounts)}</p>
+                    <Button variant="outline" size="small" onClick={() => onNavigate("accounts")}>
+                      Choose accounts
+                    </Button>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="grid justify-items-start gap-3">
@@ -311,17 +328,19 @@ export default function OverviewPage({
                   income minus everything you’ve spent so far this pay period, across all accounts.
                 </p>
               )}
-              {discretionarySuggestions.length > 0 && (
-                <div className="grid gap-1 text-sm">
-                  <strong>Suggested use of your discretionary income</strong>
-                  {discretionarySuggestions.map((item) => (
-                    <span key={item.potId}>
-                      {money(item.amount)} to cover pot ‘{item.potName}’ ({money(item.shortfall)}{" "}
-                      still to go)
-                    </span>
-                  ))}
-                </div>
-              )}
+              {/* Pots saved for each payday already appear in the next pay period's transfers. */}
+              {discretionarySuggestions.length > 0 &&
+                !plans.next?.transfers.some((transfer) => transfer.kind === "pot") && (
+                  <div className="grid gap-1 text-sm">
+                    <strong>Suggested use of your discretionary income</strong>
+                    {discretionarySuggestions.map((item) => (
+                      <span key={item.potId}>
+                        {money(item.amount)} to cover pot ‘{item.potName}’ ({money(item.shortfall)}{" "}
+                        still to go)
+                      </span>
+                    ))}
+                  </div>
+                )}
               <Button variant="link" className="hero-link" onClick={() => onNavigate("activity")}>
                 Explore your cash flow <span>→</span>
               </Button>
