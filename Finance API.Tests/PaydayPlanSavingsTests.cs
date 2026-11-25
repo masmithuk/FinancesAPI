@@ -223,6 +223,55 @@ public sealed class PaydayPlanSavingsTests
     }
 
     [Fact]
+    public async Task Savings_Account_Never_Pays_For_Bills_In_The_Next_Pay_Period()
+    {
+        // A £2,000 car payment on top of the rent leaves Bills £1,300 short after the salary; savings
+        // hold £5,000 but are not for bills, so the gap is shown as still needed instead.
+        var (factory, client, connection) = await StartAsync("savings-not-bills-user");
+        await using var _ = connection;
+        using var __ = factory;
+        var seed = await SeedAsync(factory, "savings-not-bills-user", (db, owner, _, bills, ids) =>
+        {
+            AddAccount(db, owner, ids, "Savings", AccountRoles.Savings, balance: 5000m);
+            db.ScheduledItems.Add(new ScheduledItem
+            {
+                Name = "Car", Account = bills, Amount = 2000m,
+                StartDate = DateTime.UtcNow.Date.AddDays(10), Frequency = 2, IsIncome = false
+            });
+        });
+
+        var plan = await GetPlanAsync(client, "next");
+
+        Assert.DoesNotContain(Transfers(plan), transfer =>
+            transfer.GetProperty("fromAccountId").GetGuid() == seed.Ids["Savings"]);
+        Assert.Equal(1300m, AccountIn(plan, seed.BillsId).GetProperty("unfundedShortfall").GetDecimal());
+    }
+
+    [Fact]
+    public async Task Savings_Account_Never_Pays_For_Bills_In_This_Pay_Period()
+    {
+        // Before payday nothing but savings holds money; a £50 bill due tomorrow is left still needed.
+        var (factory, client, connection) = await StartAsync("savings-not-bills-now-user");
+        await using var _ = connection;
+        using var __ = factory;
+        var seed = await SeedAsync(factory, "savings-not-bills-now-user", (db, owner, _, bills, ids) =>
+        {
+            AddAccount(db, owner, ids, "Savings", AccountRoles.Savings, balance: 5000m);
+            db.ScheduledItems.Add(new ScheduledItem
+            {
+                Name = "Phone", Account = bills, Amount = 50m,
+                StartDate = DateTime.UtcNow.Date.AddDays(1), Frequency = 2, IsIncome = false
+            });
+        });
+
+        var plan = await GetPlanAsync(client, "current");
+
+        Assert.DoesNotContain(Transfers(plan), transfer =>
+            transfer.GetProperty("fromAccountId").GetGuid() == seed.Ids["Savings"]);
+        Assert.Equal(50m, AccountIn(plan, seed.BillsId).GetProperty("unfundedShortfall").GetDecimal());
+    }
+
+    [Fact]
     public async Task Pot_Gets_Its_Amount_From_Its_Own_Account()
     {
         var (factory, client, connection) = await StartAsync("pot-user");
@@ -365,7 +414,7 @@ public sealed class PaydayPlanSavingsTests
     }
 
     [Fact]
-    public async Task This_Pay_Period_Suggests_No_Savings_Or_Spending_Transfers()
+    public async Task This_Pay_Period_Suggests_No_Savings_Or_Spending_Transfers_Before_Payday()
     {
         var (factory, client, connection) = await StartAsync("current-savings-user");
         await using var _ = connection;
@@ -379,6 +428,53 @@ public sealed class PaydayPlanSavingsTests
         var plan = await GetPlanAsync(client, "current");
 
         Assert.All(Transfers(plan), transfer => Assert.Equal("bills", transfer.GetProperty("kind").GetString()));
+    }
+
+    [Fact]
+    public async Task On_Payday_This_Pay_Period_Suggests_Savings_And_Spending_From_Money_Already_In()
+    {
+        // Payday is today and the £1,000 salary is already in Income (checked today). Rent of £300 is
+        // paid from Bills, and Income keeps £100 for its own bill on day 10. £50 child benefit only
+        // arrives on day 3, so it isn't sent anywhere yet: £1,000 - 300 - 200 savings - 100 = £400.
+        var (factory, client, connection) = await StartAsync("payday-today-user");
+        await using var _ = connection;
+        using var __ = factory;
+        var today = DateTime.UtcNow.Date;
+        Guid incomeId, billsId;
+        var ids = new Dictionary<string, Guid>();
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<FinanceDbContext>();
+            var owner = await db.Users.Where(user => user.UserName == "payday-today-user").Select(user => user.Id).SingleAsync();
+            var income = new Account { Name = "Income", OwnerId = owner, BalanceCheckedOn = today };
+            var bills = new Account { Name = "Bills", OwnerId = owner };
+            db.Accounts.AddRange(income, bills);
+            db.Balances.Add(new Balance { Account = income, Date = today, Amount = 1000m });
+            db.ScheduledItems.AddRange(
+                new ScheduledItem { Name = "Salary", Account = income, Amount = 1000m, StartDate = today, Frequency = 2, IsIncome = true },
+                new ScheduledItem { Name = "Child Benefit", Account = income, Amount = 50m, StartDate = today.AddDays(3), Frequency = 2, IsIncome = true },
+                new ScheduledItem { Name = "Car", Account = income, Amount = 100m, StartDate = today.AddDays(10), Frequency = 2, IsIncome = false },
+                new ScheduledItem { Name = "Rent", Account = bills, Amount = 300m, StartDate = today.AddDays(5), Frequency = 2, IsIncome = false });
+            AddAccount(db, owner, ids, "Spending", AccountRoles.Spending);
+            AddAccount(db, owner, ids, "Savings", AccountRoles.Savings, savePerPayday: 200m);
+            await db.SaveChangesAsync();
+            incomeId = income.Id;
+            billsId = bills.Id;
+        }
+
+        var plan = await GetPlanAsync(client, "current");
+
+        Assert.Equal("current", plan.GetProperty("mode").GetString());
+        var bill = TransferOf(plan, "bills");
+        Assert.Equal(billsId, bill.GetProperty("toAccountId").GetGuid());
+        Assert.Equal(300m, bill.GetProperty("amount").GetDecimal());
+        var savings = TransferOf(plan, "savings");
+        Assert.Equal(incomeId, savings.GetProperty("fromAccountId").GetGuid());
+        Assert.Equal(200m, savings.GetProperty("amount").GetDecimal());
+        var spending = TransferOf(plan, "spending");
+        Assert.Equal(incomeId, spending.GetProperty("fromAccountId").GetGuid());
+        Assert.Equal(ids["Spending"], spending.GetProperty("toAccountId").GetGuid());
+        Assert.Equal(400m, spending.GetProperty("amount").GetDecimal());
     }
 
     [Fact]

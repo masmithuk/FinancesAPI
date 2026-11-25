@@ -296,10 +296,11 @@ public sealed class PaydayPlanService(FinanceDbContext db) : IPaydayPlanService
                      .Where(account => transferNeeded[account.Id] > 0)
                      .OrderBy(account => account.Name))
         {
-            // Savings are only drawn on for bills once everyday money has run out.
-            foreach (var source in accounts
-                         .Where(account => account.Id != target.Id && availableSources[account.Id] > 0)
-                         .OrderBy(account => account.Role == AccountRoles.Savings))
+            // Savings are never used for bills: what everyday money can't cover is left as still needed.
+            foreach (var source in accounts.Where(account =>
+                         account.Id != target.Id &&
+                         account.Role != AccountRoles.Savings &&
+                         availableSources[account.Id] > 0))
             {
                 var amount = Math.Min(unfunded[target.Id], availableSources[source.Id]);
                 if (amount <= 0)
@@ -318,7 +319,24 @@ public sealed class PaydayPlanService(FinanceDbContext db) : IPaydayPlanService
             }
         }
 
-        if (isUpcoming)
+        // Savings and spending money are shared out for the next pay period, and on payday itself for
+        // this one (the salary has just landed). Between paydays this pay period only covers bills.
+        var onPayday = !isUpcoming && !beforeFirstPayday && insidePayday;
+        if (onPayday)
+        {
+            // On payday only money already in an account is shared out, after its own bills until the
+            // next payday: income still to come this period (child benefit, say) isn't spent in advance.
+            foreach (var account in accounts)
+            {
+                var alreadyIn = Math.Max(0m, fundingBalanceByAccount[account.Id]) -
+                                expensesDueByAccount[account.Id] +
+                                transfers.Where(transfer => transfer.ToAccountId == account.Id).Sum(transfer => transfer.Amount) -
+                                transfers.Where(transfer => transfer.FromAccountId == account.Id).Sum(transfer => transfer.Amount);
+                availableSources[account.Id] = Math.Min(availableSources[account.Id], Math.Max(0m, alreadyIn));
+            }
+        }
+
+        if (isUpcoming || onPayday)
         {
             var pots = await db.Pots
                 .Where(pot => accountIds.Contains(pot.AccountId))
@@ -330,9 +348,10 @@ public sealed class PaydayPlanService(FinanceDbContext db) : IPaydayPlanService
             // Savings paid in from shortly before this payday (but after the last one) count towards it,
             // so a payment marked as done isn't suggested again.
             var paidFrom = payWindow.Start.AddDays(-UpcomingLookAheadDays);
-            if (currentWindow is not null && currentWindow.End >= paidFrom)
+            var previousPayday = payWindows.LastOrDefault(window => window.Start < payWindow.Start);
+            if (previousPayday is not null && previousPayday.End >= paidFrom)
             {
-                paidFrom = currentWindow.End.AddDays(1);
+                paidFrom = previousPayday.End.AddDays(1);
             }
 
             var paidIntoPots = pots.ToDictionary(

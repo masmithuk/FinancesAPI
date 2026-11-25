@@ -1,6 +1,6 @@
 # Spare money: savings, pots and the spending account
 
-In the next pay period, once bill transfers are covered, the plan shares out the money left over. Each pot gets its "save each payday" amount (or its dated goal spread over the paydays left). Each savings account gets its amount. Whatever is left in everyday accounts goes to the one account marked as spending. Savings accounts are never swept to spending, and are only drawn on for bills once everyday money runs out. Payments made for this payday (from the day after the last payday, and at most a week before this one) count towards it, so a row marked as done isn't suggested again.
+In the next pay period, and in this pay period on payday itself, once bill transfers are covered, the plan shares out the money left over (on payday, only money already in each account after its bills until the next payday). Each pot gets its "save each payday" amount (or its dated goal spread over the paydays left). Each savings account gets its amount. Whatever is left in everyday accounts goes to the one account marked as spending. Savings accounts are never swept to spending or used to pay bills: a bill everyday money can't cover shows as still needed. Payments made for this payday (from the day after the last payday, and at most a week before this one) count towards it, so a row marked as done isn't suggested again.
 
 ## Sub-features
 

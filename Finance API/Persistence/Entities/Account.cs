@@ -28,7 +28,7 @@ public sealed class Account
     /// <summary>
     /// How the payday plan treats this account: "everyday" (default), "spending" (where spare money is
     /// sent once bills and savings are covered; at most one per user) or "savings" (never drained for
-    /// spending, and only used for bills as a last resort).
+    /// spending or used to pay bills).
     /// </summary>
     [Required, MaxLength(20)]
     public string Role { get; set; } = AccountRoles.Everyday;
