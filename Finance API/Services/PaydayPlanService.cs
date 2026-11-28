@@ -171,7 +171,7 @@ public sealed class PaydayPlanService(FinanceDbContext db) : IPaydayPlanService
 
         var planStart = payWindow.Start < today ? today : payWindow.Start;
         var planEnd = nextPayday.Start;
-        // This pay period looks on to the end of the next one, so it doesn't move money needed after payday.
+        // This pay period looks on to the end of the next one, to keep back money the next pay can't cover.
         var eventsEnd = isUpcoming
             ? planEnd
             : payWindows.FirstOrDefault(window => window.Start > nextPayday.Start)?.Start ?? planEnd;
@@ -269,8 +269,33 @@ public sealed class PaydayPlanService(FinanceDbContext db) : IPaydayPlanService
         var transferNeeded = accounts.ToDictionary(
             account => account.Id,
             account => Math.Max(0m, expensesDueByAccount[account.Id] - fundsByAccount[account.Id]));
-        // This pay period can only give away money the account won't need before the end of the next one:
-        // its lowest projected balance over that time, before any transfers.
+        // This pay period can only give away money the account won't need before payday (its lowest
+        // projected balance until then). Bills after payday are paid by the next payday's transfers, so
+        // money is only kept back for them when the next pay period's income can't cover its bills: that
+        // gap is held back from the accounts that need money after payday, in proportion to their need.
+        var lowestBeforePayday = new Dictionary<Guid, decimal>();
+        var keptForNextPeriod = new Dictionary<Guid, decimal>();
+        if (!isUpcoming)
+        {
+            foreach (var account in accounts)
+            {
+                var accountEvents = events.Where(item => item.AccountId == account.Id).ToList();
+                var start = balanceByAccount.GetValueOrDefault(account.Id);
+                var (beforePayday, _) = ComputeRunningMinimum(accountEvents.Where(item => item.Date < planEnd), start);
+                var (throughNextPeriod, _) = ComputeRunningMinimum(accountEvents, start);
+                lowestBeforePayday[account.Id] = Math.Max(0m, beforePayday);
+                keptForNextPeriod[account.Id] = Math.Max(0m, lowestBeforePayday[account.Id] - Math.Max(0m, throughNextPeriod));
+            }
+
+            var nextPeriodGap = Math.Max(0m, -events.Where(item => item.Date >= planEnd).Sum(item => item.Amount));
+            var totalKept = keptForNextPeriod.Values.Sum();
+            var share = totalKept == 0m ? 0m : Math.Min(1m, nextPeriodGap / totalKept);
+            foreach (var account in accounts)
+            {
+                keptForNextPeriod[account.Id] = Math.Ceiling(keptForNextPeriod[account.Id] * share * 100m) / 100m;
+            }
+        }
+
         var availableSources = accounts.ToDictionary(
             account => account.Id,
             account =>
@@ -284,10 +309,7 @@ public sealed class PaydayPlanService(FinanceDbContext db) : IPaydayPlanService
                     return spare;
                 }
 
-                var (lowest, _) = ComputeRunningMinimum(
-                    events.Where(item => item.AccountId == account.Id),
-                    balanceByAccount.GetValueOrDefault(account.Id));
-                return Math.Min(spare, Math.Max(0m, lowest));
+                return Math.Min(spare, Math.Max(0m, lowestBeforePayday[account.Id] - keptForNextPeriod[account.Id]));
             });
         var transfers = new List<TransferRecommendationResponse>();
         var unfunded = transferNeeded.ToDictionary(pair => pair.Key, pair => pair.Value);
@@ -322,10 +344,11 @@ public sealed class PaydayPlanService(FinanceDbContext db) : IPaydayPlanService
         // Savings and spending money are shared out for the next pay period, and on payday itself for
         // this one (the salary has just landed). Between paydays this pay period only covers bills.
         var onPayday = !isUpcoming && !beforeFirstPayday && insidePayday;
-        if (onPayday)
+        if (!isUpcoming)
         {
-            // On payday only money already in an account is shared out, after its own bills until the
-            // next payday: income still to come this period (child benefit, say) isn't spent in advance.
+            // In this pay period only money already in an account is spare (and, on payday, shared out),
+            // after its own bills until the next payday: income still to come this period (child benefit,
+            // say) isn't spent in advance.
             foreach (var account in accounts)
             {
                 var alreadyIn = Math.Max(0m, fundingBalanceByAccount[account.Id]) -

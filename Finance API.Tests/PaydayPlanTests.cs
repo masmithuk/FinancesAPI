@@ -631,6 +631,38 @@ public sealed class PaydayPlanTests
     }
 
     [Fact]
+    public async Task Current_Period_Does_Not_Count_Income_Still_To_Come_As_Spare()
+    {
+        // Main holds exactly its £300 car finance (due in 8 days). £180 child benefit arrives in 5 days,
+        // before payday: it isn't spare money right now.
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        using var factory = new FinanceApiFactory(connection);
+        using var client = await CreateAuthenticatedClient(factory, "income-to-come-user");
+        var today = DateTime.UtcNow.Date;
+        Guid mainId;
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<FinanceDbContext>();
+            var ownerId = await db.Users.Where(user => user.UserName == "income-to-come-user").Select(user => user.Id).SingleAsync();
+            var main = new Account { Name = "Main", OwnerId = ownerId };
+            db.Accounts.Add(main);
+            db.Balances.Add(new Balance { Account = main, Date = today, Amount = 300m });
+            db.ScheduledItems.AddRange(
+                new ScheduledItem { Name = "Salary", Account = main, Amount = 4000m, StartDate = today.AddDays(-10), Frequency = 2, IsIncome = true },
+                new ScheduledItem { Name = "Child benefit", Account = main, Amount = 180m, StartDate = today.AddDays(5), Frequency = 2, IsIncome = true },
+                new ScheduledItem { Name = "Car finance", Account = main, Amount = 300m, StartDate = today.AddDays(8), Frequency = 2, IsIncome = false });
+            await db.SaveChangesAsync();
+            mainId = main.Id;
+        }
+
+        var plan = await GetPlanAsync(client, "current");
+
+        Assert.Equal("current", plan.GetProperty("mode").GetString());
+        Assert.Equal(0m, AccountIn(plan, mainId).GetProperty("leftAfterTransfers").GetDecimal());
+    }
+
+    [Fact]
     public async Task Checked_Today_Treats_Todays_Planned_Income_As_Already_In_Balance()
     {
         // Payday is today; the user typed the bank balance after the salary landed.
@@ -704,14 +736,15 @@ public sealed class PaydayPlanTests
     }
 
     [Fact]
-    public async Task Current_Period_Keeps_Money_The_Next_Period_Needs()
+    public async Task Current_Period_Keeps_Money_The_Next_Pay_Cannot_Cover()
     {
-        // Joint holds £900 for a mortgage due after payday; Bills runs £20 short before payday.
+        // Joint holds £900 towards a £2,000 mortgage due after payday, more than the £1,000 pay: the next
+        // pay can't cover it, so the £900 stays put. Bills runs £20 short before payday.
         await using var connection = new SqliteConnection("Data Source=:memory:");
         await connection.OpenAsync();
         using var factory = new FinanceApiFactory(connection);
         using var client = await CreateAuthenticatedClient(factory, "reserve-user");
-        var ids = await SeedAccountsAsync(factory, "reserve-user", ("Joint", 900m, 900m, 5), ("Bills", 20m, 40m, 1));
+        var ids = await SeedAccountsAsync(factory, "reserve-user", ("Joint", 900m, 2000m, 5), ("Bills", 20m, 40m, 1));
 
         var plan = await GetPlanAsync(client, "current");
 
@@ -735,6 +768,36 @@ public sealed class PaydayPlanTests
         var transfer = Assert.Single(plan.GetProperty("transfers").EnumerateArray());
         Assert.Equal(ids["Joint"], transfer.GetProperty("fromAccountId").GetGuid());
         Assert.Equal(20m, transfer.GetProperty("amount").GetDecimal());
+    }
+
+    [Fact]
+    public async Task Current_Period_Shows_Money_Left_Before_Payday_As_Spare_When_Next_Pay_Covers_Later_Bills()
+    {
+        // Spending holds £1,000 and needs £800 before payday, then £800 again after it. The £1,000 pay
+        // covers the later bills, so the £200 left until payday is spare now.
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        using var factory = new FinanceApiFactory(connection);
+        using var client = await CreateAuthenticatedClient(factory, "spare-spending-user");
+        var ids = await SeedAccountsAsync(factory, "spare-spending-user", ("Spending", 1000m, 800m, 1));
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<FinanceDbContext>();
+            db.ScheduledItems.Add(new ScheduledItem
+            {
+                Name = "Food after payday",
+                AccountId = ids["Spending"],
+                Amount = 800m,
+                StartDate = DateTime.UtcNow.Date.AddDays(5),
+                Frequency = 2,
+                IsIncome = false
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var plan = await GetPlanAsync(client, "current");
+
+        Assert.Equal(200m, AccountIn(plan, ids["Spending"]).GetProperty("leftAfterTransfers").GetDecimal());
     }
 
     [Fact]
@@ -776,17 +839,19 @@ public sealed class PaydayPlanTests
     }
 
     [Fact]
-    public async Task Current_Period_Money_Needed_Later_Is_Not_Shown_As_Spare()
+    public async Task Current_Period_Keeps_Back_Only_What_The_Next_Pay_Cannot_Cover()
     {
+        // Joint holds £1,000; a £1,500 mortgage is due after payday and the pay is £1,000. The pay covers
+        // £1,000 of it, so £500 is kept back and the other £500 is spare now.
         await using var connection = new SqliteConnection("Data Source=:memory:");
         await connection.OpenAsync();
         using var factory = new FinanceApiFactory(connection);
         using var client = await CreateAuthenticatedClient(factory, "reserve-left-user");
-        var ids = await SeedAccountsAsync(factory, "reserve-left-user", ("Joint", 1000m, 900m, 5));
+        var ids = await SeedAccountsAsync(factory, "reserve-left-user", ("Joint", 1000m, 1500m, 5));
 
         var plan = await GetPlanAsync(client, "current");
 
-        Assert.Equal(100m, AccountIn(plan, ids["Joint"]).GetProperty("leftAfterTransfers").GetDecimal());
+        Assert.Equal(500m, AccountIn(plan, ids["Joint"]).GetProperty("leftAfterTransfers").GetDecimal());
     }
 
     [Fact]

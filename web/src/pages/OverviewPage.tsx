@@ -276,12 +276,8 @@ export default function OverviewPage({
                 <MoneyLeftAfterTransfers
                   accounts={paydayPlan.accounts}
                   mode={paydayPlan.mode}
-                  // This pay period keeps money back until the end of the next one.
-                  until={
-                    (paydayPlan.mode === "current" ? plans.next?.periodEndDate : null) ??
-                    paydayPlan.periodEndDate ??
-                    ""
-                  }
+                  // Bills after payday are paid from the next payday's transfers.
+                  until={paydayPlan.periodEndDate ?? ""}
                 />
                 {spareMoneyTip(paydayPlan.mode, paydayPlan.accounts) && (
                   <div className="grid justify-items-start gap-3 rounded-lg border p-3 text-sm">
