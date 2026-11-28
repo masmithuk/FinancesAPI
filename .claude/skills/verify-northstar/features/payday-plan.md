@@ -6,7 +6,7 @@ The Overview's "Transfers to make" panel tells the user how much to move into ea
 
 - `plan-tabs` shows "This pay period" and "Next pay period", opening on Next within 7 days of payday.
 - `plan-next` gives the next period's transfers, counting money already in an account and overdraft before payday.
-- `plan-current` covers this period's shortfalls using only money not needed after payday.
+- `plan-current` covers this period's shortfalls using only money already in an account and not needed before payday. Bills after payday are left to the next payday's transfers; money is kept back for them only when the next pay can't cover the next period's bills. Income still to come before payday (child benefit, say) isn't spare.
 - `plan-breakdown` shows each account's bills due, income in, already there, overdrawn-before-payday and send, with a note when existing money was counted.
 - `plan-warning` warns about accounts that run short before payday.
 - `plan-money-left` shows money left after payday (Next) or spare money right now (This), each with a note saying what it counts.
@@ -34,8 +34,8 @@ Preconditions:
 - **Next: warning.** `Some accounts run short before payday.` lists `Bills: drops to -£20.00 on <D+1> before payday`.
 - **Next: money left.** `Left in each account after payday`, with the note `What each account still holds once the transfers above are made and every bill before <D+17> is paid.`, lists exactly `Current £1,530.00`.
 - **Switch to This.** Choose the `This pay period` button. The subtitle reads `This pay period · <D−11> until payday on <D+3>`.
-- **This: transfers keep Joint's money.** `Recommended transfers` has exactly one row, `Current → Bills £20.00`. There is no row from `Joint`: its £300 is needed for the mortgage after payday.
-- **This: money left.** `Spare money right now`, with the note `Money no planned bill needs before <D+17>, after any transfers above. It’s free to spend or save.`, lists exactly `Current £130.00`. Joint isn't listed.
+- **This: transfers.** `Recommended transfers` has exactly one row, `Current → Bills £20.00`. Joint's £300 could also be used (the £2,000 pay covers the £900 mortgage after payday), but Current comes first by name.
+- **This: money left.** `Spare money right now`, with the note `Money no planned bill needs before <D+3>, after any transfers above. It’s free to spend or save.`, lists exactly `Joint £300.00` and `Current £130.00`. The mortgage after payday is paid from payday's transfers, so Joint's £300 is spare now.
 - **Proof.** Save the page text for each tab to `.verify/artifacts/payday-plan/next.txt` and `this.txt`. Run `scripts/capture.sh payday-plan baseline`. `baseline-plan-next.json` should show `"mode":"upcoming"` and `baseline-plan-current.json` `"mode":"current"`, with the same transfers as on screen.
 
 ## Gotchas
@@ -44,4 +44,5 @@ Preconditions:
 - The first load can take a few seconds while the API warms up. Wait for `Transfers to make` before reading values.
 - Weekly or fortnightly pay keeps the app in "Next" mode for much of the cycle: the 7-day rule is measured to the next payday.
 - If today is the payday itself, the app opens on This, not Next. The seed avoids that by putting payday at D+3.
+- Next counts Joint's £300 towards the mortgage (Send £600). If the user spends that spare £300 first, they update Joint's balance and Next then says send £900.
 - `plan-empty-breakdown` can't be reached from the baseline seed, which always has bills in both periods. Report it as unreached unless the run adds a period with no bills.
